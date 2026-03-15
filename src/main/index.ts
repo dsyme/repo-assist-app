@@ -148,6 +148,19 @@ ipcMain.handle('gh:closeIssue', async (_event, repo: string, number: number, rea
   return ghBridge.closeIssue(repo, number, reason, writeMode)
 })
 
+ipcMain.handle('gh:getPRChecks', async (_event, repo: string, number: number) => {
+  return ghBridge.getPRChecks(repo, number)
+})
+
+ipcMain.handle('gh:getPRTimeline', async (_event, repo: string, number: number) => {
+  return ghBridge.getPRTimeline(repo, number)
+})
+
+ipcMain.handle('gh:markPRReady', async (_event, repo: string, number: number) => {
+  const writeMode = localState.getWriteMode()
+  return ghBridge.markPRReady(repo, number, writeMode)
+})
+
 ipcMain.handle('gh:searchRepos', async (_event, query: string) => {
   return ghBridge.searchRepos(query)
 })

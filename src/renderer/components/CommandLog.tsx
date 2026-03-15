@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { Text, ActionList, Label, RelativeTime } from '@primer/react'
 import { TerminalIcon } from '@primer/octicons-react'
 

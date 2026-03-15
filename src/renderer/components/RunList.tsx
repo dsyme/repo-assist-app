@@ -1,4 +1,4 @@
-import React from 'react'
+
 import { Text, ActionList, Label, RelativeTime } from '@primer/react'
 import { CheckCircleIcon, XCircleIcon, ClockIcon, PlayIcon } from '@primer/octicons-react'
 import { RepoRun } from '@shared/types'

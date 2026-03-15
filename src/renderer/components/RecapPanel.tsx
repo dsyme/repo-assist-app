@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react'
-import { Text, ActionList, Label, Button, Spinner, Flash } from '@primer/react'
+import { useState, useEffect } from 'react'
+import { Text, ActionList, Label, Button, Spinner } from '@primer/react'
 import {
   GitPullRequestIcon,
   CommentIcon,

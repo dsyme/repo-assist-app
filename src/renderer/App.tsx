@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Flash, ToggleSwitch, Text, Spinner } from '@primer/react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { Flash, ToggleSwitch, Text } from '@primer/react'
 import { ZapIcon } from '@primer/octicons-react'
 import { NavState, RepoIssue, RepoPR, RepoRun } from '@shared/types'
 import { Sidebar } from './components/Sidebar'

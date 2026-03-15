@@ -1,4 +1,4 @@
-import React from 'react'
+
 import { Text, ActionList, Label, RelativeTime, StateLabel } from '@primer/react'
 import {
   GitPullRequestIcon,

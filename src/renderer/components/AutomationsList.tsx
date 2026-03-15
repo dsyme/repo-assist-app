@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Text, ActionList, Label, Button, Spinner } from '@primer/react'
 import {
   WorkflowIcon,
@@ -9,6 +9,7 @@ import {
 } from '@primer/octicons-react'
 import { marked } from 'marked'
 import { RepoWorkflow } from '@shared/types'
+import { GhAwIcon, PagesDeployIcon } from './icons'
 
 marked.setOptions({ gfm: true, breaks: true })
 
@@ -29,6 +30,33 @@ interface EnrichedWorkflow extends RepoWorkflow {
   agentic: boolean
   /** For agentic workflows backed by .lock.yml, this is the .md spec path */
   specPath: string | null
+  /** Kind of workflow for icon/label selection */
+  kind: 'ghaw' | 'copilot' | 'deploy' | 'cicd'
+}
+
+function workflowKind(w: RepoWorkflow, agentic: boolean): EnrichedWorkflow['kind'] {
+  if (w.path.startsWith('dynamic/') && w.name.toLowerCase().includes('copilot')) return 'copilot'
+  if (agentic) return 'ghaw'
+  if (w.path.includes('pages') || w.name.toLowerCase().includes('pages') || w.name.toLowerCase().includes('deploy')) return 'deploy'
+  return 'cicd'
+}
+
+function WorkflowKindIcon({ kind, size = 16 }: { kind: EnrichedWorkflow['kind']; size?: number }) {
+  switch (kind) {
+    case 'ghaw': return <GhAwIcon size={size} className="gh-icon-ghaw" />
+    case 'copilot': return <CopilotIcon size={size} className="gh-icon-accent" />
+    case 'deploy': return <PagesDeployIcon size={size} className="gh-icon-deploy" />
+    default: return <WorkflowIcon size={size} className="gh-icon-muted" />
+  }
+}
+
+function kindLabel(kind: EnrichedWorkflow['kind']): string {
+  switch (kind) {
+    case 'ghaw': return 'Agentic'
+    case 'copilot': return 'Copilot'
+    case 'deploy': return 'Deployment'
+    default: return 'CI/CD'
+  }
 }
 
 export function AutomationsList({ repo }: AutomationsListProps) {
@@ -49,28 +77,28 @@ export function AutomationsList({ repo }: AutomationsListProps) {
           wf.map(async (w): Promise<EnrichedWorkflow> => {
             // Dynamic workflows (GitHub-hosted agentic services like Copilot)
             if (w.path.startsWith('dynamic/')) {
-              return { ...w, agentic: true, specPath: null }
+              const kind = workflowKind(w, true)
+              return { ...w, agentic: true, specPath: null, kind }
             }
 
             // .lock.yml = compiled form of an agentic .md workflow spec
-            // The primary file is the .md — check if it exists
             if (w.path.endsWith('.lock.yml')) {
               const mdPath = w.path.replace('.lock.yml', '.md')
-              return { ...w, agentic: true, specPath: mdPath }
+              return { ...w, agentic: true, specPath: mdPath, kind: 'ghaw' }
             }
 
             // For regular .yml/.yaml, check if a .lock.yml sibling exists
-            // (meaning this .yml is actually also part of an agentic pair)
             if (w.path.endsWith('.yml') || w.path.endsWith('.yaml')) {
               const lockPath = w.path.replace(/\.(yml|yaml)$/, '.lock.yml')
               const lockExists = await window.repoAssist.getFileContent(repo, lockPath)
               if (lockExists !== null) {
                 const mdPath = w.path.replace(/\.(yml|yaml)$/, '.md')
-                return { ...w, agentic: true, specPath: mdPath }
+                return { ...w, agentic: true, specPath: mdPath, kind: 'ghaw' }
               }
             }
 
-            return { ...w, agentic: false, specPath: null }
+            const kind = workflowKind(w, false)
+            return { ...w, agentic: false, specPath: null, kind }
           })
         )
 
@@ -157,16 +185,13 @@ export function AutomationsList({ repo }: AutomationsListProps) {
           {workflows.map(wf => (
             <ActionList.Item key={wf.id} onSelect={() => handleSelectWorkflow(wf)}>
               <ActionList.LeadingVisual>
-                {wf.agentic
-                  ? <CopilotIcon size={16} className="gh-icon-accent" />
-                  : <WorkflowIcon size={16} className="gh-icon-muted" />
-                }
+                <WorkflowKindIcon kind={wf.kind} />
               </ActionList.LeadingVisual>
               <div>
                 <Text weight="semibold">{wf.name}</Text>
                 <div className="run-meta">
                   <Label variant={wf.agentic ? 'accent' : 'secondary'}>
-                    {wf.agentic ? 'Agentic' : 'CI/CD'}
+                    {kindLabel(wf.kind)}
                   </Label>
                   <Label variant={wf.state === 'active' ? 'success' : 'secondary'}>
                     {wf.state}
@@ -194,7 +219,7 @@ export function AutomationsList({ repo }: AutomationsListProps) {
 /** Separate component for workflow detail — avoids conditional hook calls */
 function AutomationDetail({
   workflow,
-  repo,
+  repo: _repo,
   sourceContent,
   sourceLoading,
   onBack,
@@ -240,14 +265,14 @@ function AutomationDetail({
             <ChevronLeftIcon size={16} />
           </Button>
           {workflow.agentic
-            ? <CopilotIcon size={20} className="gh-icon-accent" />
-            : <WorkflowIcon size={20} className="gh-icon-muted" />
+            ? <WorkflowKindIcon kind={workflow.kind} size={20} />
+            : <WorkflowKindIcon kind={workflow.kind} size={20} />
           }
           <div>
             <h3 className="detail-title">{workflow.name}</h3>
             <div className="detail-meta">
               <Label variant={workflow.agentic ? 'accent' : 'secondary'}>
-                {workflow.agentic ? 'Agentic' : 'CI/CD'}
+                {kindLabel(workflow.kind)}
               </Label>
               <Label variant={workflow.state === 'active' ? 'success' : 'secondary'}>
                 {workflow.state}

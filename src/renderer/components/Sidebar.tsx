@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState } from 'react'
 import { Text, TreeView, CounterLabel, Button } from '@primer/react'
 import {
   ChecklistIcon,

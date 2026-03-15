@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import { useMemo } from 'react'
 import { Text, ActionList, Label, CounterLabel, RelativeTime } from '@primer/react'
 import { IssueOpenedIcon, IssueClosedIcon, CommentIcon } from '@primer/octicons-react'
 import { RepoIssue } from '@shared/types'

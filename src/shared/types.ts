@@ -55,6 +55,33 @@ export interface IssueDetail {
   updatedAt: string
 }
 
+export interface PRCommit {
+  oid: string
+  messageHeadline: string
+  committedDate: string
+  authors: { login: string; name: string }[]
+}
+
+export interface PRCheck {
+  __typename: string
+  name: string
+  status: string
+  conclusion: string
+  workflowName: string
+  detailsUrl: string
+  startedAt: string
+  completedAt: string
+}
+
+export interface PRTimelineEvent {
+  event: string
+  created_at: string | null
+  actor?: { login: string }
+  message?: string
+  sha?: string
+  body?: string
+}
+
 export interface PRDetail {
   number: number
   title: string
@@ -70,7 +97,8 @@ export interface PRDetail {
   files: { path: string; additions: number; deletions: number }[]
   comments: { author: { login: string }; body: string; createdAt: string }[]
   reviews: { author: { login: string }; body: string; state: string; createdAt: string }[]
-  statusCheckRollup: { state: string }[]
+  statusCheckRollup: PRCheck[]
+  commits: PRCommit[]
   createdAt: string
   updatedAt: string
 }
@@ -112,6 +140,9 @@ export interface RepoAssistAPI {
   getIssueDetail: (repo: string, number: number) => Promise<IssueDetail | null>
   getPRDetail: (repo: string, number: number) => Promise<PRDetail | null>
   getPRDiff: (repo: string, number: number) => Promise<string>
+  getPRChecks: (repo: string, number: number) => Promise<PRCheck[]>
+  getPRTimeline: (repo: string, number: number) => Promise<PRTimelineEvent[]>
+  markPRReady: (repo: string, number: number) => Promise<unknown>
   getFileContent: (repo: string, path: string) => Promise<string | null>
   closeIssue: (repo: string, number: number, reason: string) => Promise<unknown>
   searchRepos: (query: string) => Promise<{ fullName: string; description: string }[]>

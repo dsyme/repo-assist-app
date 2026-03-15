@@ -149,7 +149,7 @@ export class GhBridge {
 
   async getPRDetail(repo: string, number: number): Promise<unknown | null> {
     const result = await this.exec(
-      `pr view ${number} -R ${repo} --json number,title,body,comments,reviews,files,additions,deletions,statusCheckRollup,state,isDraft,reviewDecision,labels,author,createdAt,updatedAt,headRefName`
+      `pr view ${number} -R ${repo} --json number,title,body,comments,reviews,files,additions,deletions,statusCheckRollup,state,isDraft,reviewDecision,labels,author,createdAt,updatedAt,headRefName,commits`
     )
     if (result.exitCode !== 0) return null
     try {
@@ -157,6 +157,52 @@ export class GhBridge {
     } catch {
       return null
     }
+  }
+
+  async getPRChecks(repo: string, number: number): Promise<unknown[]> {
+    const result = await this.exec(
+      `pr view ${number} -R ${repo} --json statusCheckRollup`
+    )
+    if (result.exitCode !== 0) return []
+    try {
+      const data = JSON.parse(result.stdout)
+      return data.statusCheckRollup ?? []
+    } catch {
+      return []
+    }
+  }
+
+  async getPRTimeline(repo: string, number: number): Promise<unknown[]> {
+    const result = await this.exec(
+      `api repos/${repo}/issues/${number}/timeline --paginate`
+    )
+    if (result.exitCode !== 0) return []
+    try {
+      const events = JSON.parse(result.stdout)
+      // Filter to timeline-relevant events
+      return events.filter((e: { event?: string }) =>
+        ['committed', 'commented', 'head_ref_force_pushed', 'ready_for_review',
+         'closed', 'merged', 'reopened', 'convert_to_draft', 'review_requested',
+         'reviewed', 'labeled'].includes(e.event ?? '')
+      )
+    } catch {
+      return []
+    }
+  }
+
+  async markPRReady(repo: string, number: number, writeMode: boolean): Promise<GhExecResult> {
+    const command = `pr ready ${number} -R ${repo}`
+    if (!writeMode) {
+      this.addToLog({
+        command: `gh ${command}`,
+        startedAt: new Date().toISOString(),
+        durationMs: 0,
+        exitCode: 0,
+        mode: 'dry-run'
+      })
+      return { stdout: '[DRY RUN] PR would be marked as ready', stderr: '', exitCode: 0, command: `gh ${command}`, durationMs: 0 }
+    }
+    return this.exec(command, 'write')
   }
 
   async getPRDiff(repo: string, number: number): Promise<string> {

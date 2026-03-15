@@ -23,6 +23,8 @@ html, body, #root {
 .gh-icon-merged { color: #a371f7; }         /* purple — merged PRs */
 .gh-icon-draft { color: #8b949e; }          /* gray — draft PRs */
 .gh-icon-accent { color: #58a6ff; }         /* blue — accent/info */
+.gh-icon-ghaw { color: #da70d6; }           /* orchid — GH Agentic Workflows */
+.gh-icon-deploy { color: #79c0ff; }         /* light blue — pages/deployment */
 .gh-icon-danger { color: #f85149; }         /* red — errors/failures */
 .gh-icon-attention { color: #d29922; }      /* yellow — warnings */
 .gh-icon-success { color: #3fb950; }        /* green — success */
@@ -793,6 +795,71 @@ html, body, #root {
 }
 .issue-ref-link:hover {
   text-decoration: underline;
+}
+
+/* ── CI Checks Panel ── */
+
+.ci-checks-panel {
+  margin: 8px 0;
+  border: 1px solid var(--borderColor-default, #30363d);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.ci-checks-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--control-transparent-bgColor-rest, #161b22);
+}
+.ci-checks-summary:hover {
+  background: var(--control-transparent-bgColor-hover, #1c2128);
+}
+
+.ci-checks-list {
+  border-top: 1px solid var(--borderColor-default, #30363d);
+}
+
+.ci-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--borderColor-muted, #21262d);
+}
+.ci-check-row:last-child {
+  border-bottom: none;
+}
+
+/* ── PR Timeline ── */
+
+.detail-timeline {
+  margin: 12px 0;
+  padding: 0 16px;
+}
+
+.timeline-list {
+  border-left: 2px solid var(--borderColor-default, #30363d);
+  margin-left: 8px;
+  padding-left: 12px;
+}
+
+.timeline-event {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  position: relative;
+}
+.timeline-event::before {
+  content: '';
+  position: absolute;
+  left: -19px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--borderColor-default, #30363d);
 }
 
 /* ── Automation Detail ── */
