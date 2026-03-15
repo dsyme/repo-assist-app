@@ -33,6 +33,19 @@ const DEFAULT_REPOS = [
 export class GhBridge {
   private commandLog: CommandLogEntry[] = []
   private maxLogEntries = 500
+  private cachedUsername: string | null = null
+
+  /** Get the authenticated GitHub username (cached) */
+  async getUsername(): Promise<string> {
+    if (this.cachedUsername) return this.cachedUsername
+    try {
+      const { stdout } = await execFileAsync('gh', ['api', 'user', '--jq', '.login'], { timeout: 10000 })
+      this.cachedUsername = stdout.trim() || 'unknown'
+    } catch {
+      this.cachedUsername = 'unknown'
+    }
+    return this.cachedUsername
+  }
 
   async exec(command: string, mode: 'read' | 'write' | 'dry-run' = 'read'): Promise<GhExecResult> {
     const startedAt = new Date().toISOString()
@@ -424,6 +437,24 @@ export class GhBridge {
       return `[#${num}](https://github.com/${repo}/${path}/${num})`
     }
 
+    // Build reference map for post-processing enrichment
+    const refMap = new Map<string, RefInfo>()
+    for (const item of allAutomationItems) {
+      const pathType = item.type === 'pr' ? 'pull' : 'issues'
+      refMap.set(`${item.repo}/${pathType}/${item.number}`, { title: item.title, state: 'open', type: item.type })
+    }
+    for (const { repo, merged, closed, newIssues } of supplementary) {
+      for (const pr of merged) {
+        refMap.set(`${repo}/pull/${pr.number}`, { title: pr.title, state: 'merged', type: 'pr' })
+      }
+      for (const issue of closed) {
+        refMap.set(`${repo}/issues/${issue.number}`, { title: issue.title, state: 'closed', type: 'issue' })
+      }
+      for (const issue of newIssues) {
+        refMap.set(`${repo}/issues/${issue.number}`, { title: issue.title, state: 'open', type: 'issue' })
+      }
+    }
+
     // Automation items (open, with attention status)
     const automationLines: string[] = []
     for (const item of allAutomationItems.slice(0, 25)) {
@@ -482,8 +513,9 @@ export class GhBridge {
     const singleRepo = repos.length === 1
     const today = new Date().toISOString().substring(0, 10)
     const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().substring(0, 10)
+    const username = await this.getUsername()
 
-    const prompt = `You are writing a brief chronicle of what's been happening ${singleRepo ? 'in the GitHub repository' : 'across these GitHub repositories'}: ${repoNames}. This is for a busy open-source maintainer. Today is ${today}. This recap covers roughly ${twoWeeksAgo} to ${today}.
+    const prompt = `You are writing a brief chronicle of what's been happening ${singleRepo ? 'in the GitHub repository' : 'across these GitHub repositories'}: ${repoNames}. This is for the maintainer @${username}. Today is ${today}. This recap covers roughly ${twoWeeksAgo} to ${today}.
 
 Write in markdown (do NOT wrap in code fences). Use ## headings to break the recap into natural sections. Write in a narrative voice — concise but with texture, like a weekly digest or changelog. Use the occasional emoji sparingly. Reference repos by their short name (e.g. "Deedle" not "fslaborg/Deedle").
 
@@ -509,6 +541,7 @@ ${sections.join('\n\n')}`
 
     let output = await this.runAIModel(prompt)
     output = stripCodeFences(output)
+    output = enrichIssueRefs(output, refMap)
     return { markdown: output }
   }
 
@@ -854,6 +887,45 @@ function stripCodeFences(text: string): string {
     s = s.substring(0, s.length - 3)
   }
   return s.trim()
+}
+
+/** Inline SVG icons for issue/PR references (GitHub octicons, 16px) */
+const GH_REF_ICONS: Record<string, string> = {
+  'issue-open': '<svg class="gh-ref-icon" viewBox="0 0 16 16" width="16" height="16"><path fill="#3fb950" d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/><path fill="#3fb950" d="M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Z"/></svg>',
+  'issue-closed': '<svg class="gh-ref-icon" viewBox="0 0 16 16" width="16" height="16"><path fill="#a371f7" d="M11.28 6.78a.75.75 0 0 0-1.06-1.06L7.25 8.69 5.78 7.22a.75.75 0 0 0-1.06 1.06l2 2a.75.75 0 0 0 1.06 0l3.5-3.5Z"/><path fill="#a371f7" d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0Zm-1.5 0a6.5 6.5 0 1 0-13 0 6.5 6.5 0 0 0 13 0Z"/></svg>',
+  'pr-open': '<svg class="gh-ref-icon" viewBox="0 0 16 16" width="16" height="16"><path fill="#3fb950" d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z"/></svg>',
+  'pr-merged': '<svg class="gh-ref-icon" viewBox="0 0 16 16" width="16" height="16"><path fill="#a371f7" d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z"/></svg>',
+  'pr-closed': '<svg class="gh-ref-icon" viewBox="0 0 16 16" width="16" height="16"><path fill="#f85149" d="M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 5.5a.75.75 0 0 1 .75.75v3.378a2.251 2.251 0 1 1-1.5 0V7.25a.75.75 0 0 1 .75-.75Zm-2.03-5.273a.75.75 0 0 1 1.06 0l.97.97.97-.97a.748.748 0 0 1 1.265.332.75.75 0 0 1-.205.729l-.97.97.97.97a.751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018l-.97-.97-.97.97a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734l.97-.97-.97-.97a.75.75 0 0 1 0-1.06ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z"/></svg>',
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+type RefInfo = { title: string; state: 'open' | 'closed' | 'merged'; type: 'issue' | 'pr' }
+
+/** Replace markdown issue/PR links with enriched HTML containing status icons and titles */
+function enrichIssueRefs(
+  markdown: string,
+  refMap: Map<string, RefInfo>
+): string {
+  return markdown.replace(
+    /\[#(\d+)\]\(https:\/\/github\.com\/([^/]+\/[^/]+)\/(issues|pull)\/(\d+)\)/g,
+    (match, _num: string, ownerRepo: string, pathType: string, numStr: string) => {
+      const key = `${ownerRepo}/${pathType}/${numStr}`
+      const info = refMap.get(key)
+      if (!info) return match // No data — keep original link
+
+      const url = `https://github.com/${ownerRepo}/${pathType}/${numStr}`
+      const cssClass = info.type === 'issue'
+        ? (info.state === 'closed' ? 'issue-closed' : 'issue-open')
+        : (info.state === 'merged' ? 'pr-merged' : info.state === 'closed' ? 'pr-closed' : 'pr-open')
+      const icon = GH_REF_ICONS[cssClass] || ''
+      const title = escapeHtml(info.title.length > 60 ? info.title.substring(0, 57) + '…' : info.title)
+
+      return `<a href="${url}" class="gh-ref ${cssClass}">${icon} #${numStr} — ${title}</a>`
+    }
+  )
 }
 
 /** Extract automation name from "Generated by [Name](url)" pattern */

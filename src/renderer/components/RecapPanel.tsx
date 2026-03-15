@@ -124,7 +124,7 @@ export function RecapPanel({ repos, filterRepo }: RecapPanelProps) {
             disabled={loading}
             size="small"
           >
-            {loading ? 'Generating…' : 'Refresh'}
+            {loading ? <span className="generating-text">Generating</span> : 'Refresh'}
           </Button>
           {summary?.markdown && (
             <Button

@@ -16,6 +16,12 @@ html, body, #root {
   color: #e6edf3;
 }
 
+/* Fix Primer Spinner animation — CSS custom properties have broken fallbacks in Primer v38 */
+:root {
+  --base-duration-1000: 1s;
+  --base-easing-linear: linear;
+}
+
 /* ── GitHub-style Buttons ── */
 
 /* Primary (green — merge, comment, ready) */
@@ -1026,6 +1032,22 @@ button[aria-disabled="true"] {
 .recap-body {
   padding: 12px 16px;
   line-height: 1.7;
+}
+
+/* Enriched issue/PR reference links with status icons */
+.gh-ref {
+  display: inline;
+  white-space: nowrap;
+  text-decoration: none;
+  color: var(--fgColor-accent, #58a6ff);
+}
+.gh-ref:hover {
+  text-decoration: underline;
+}
+.gh-ref-icon {
+  display: inline-block;
+  vertical-align: text-bottom;
+  margin-right: 2px;
 }
 
 .recap-body h2 {

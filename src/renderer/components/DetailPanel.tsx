@@ -142,6 +142,7 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
   const [visibleComments, setVisibleComments] = useState(INITIAL_COMMENT_COUNT)
   const [ciChecks, setCiChecks] = useState<PRCheck[]>([])
   const [timeline, setTimeline] = useState<PRTimelineEvent[]>([])
+  const [closing, setClosing] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Close on Escape key
@@ -258,26 +259,58 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
     setTimeout(() => setActionStatus(null), 3000)
   }
 
-  const handleCloseIssueCompleted = async () => {
-    setActionStatus('Closing issue (completed)…')
-    try {
-      await window.repoAssist.closeIssue(repo, number, 'completed')
-      setActionStatus(writeMode ? 'Issue closed (completed)!' : 'Close logged (dry-run, read-only mode)')
-    } catch (err) {
-      setActionStatus(`Failed: ${err}`)
-    }
-    setTimeout(() => setActionStatus(null), 3000)
-  }
+  const handleCloseIssue = async (reason: 'completed' | 'not_planned') => {
+    const reasonLabel = reason === 'not_planned' ? 'not planned' : 'completed'
+    setClosing(true)
 
-  const handleCloseIssueNotPlanned = async () => {
-    setActionStatus('Closing issue (not planned)…')
-    try {
-      await window.repoAssist.closeIssue(repo, number, 'not_planned')
-      setActionStatus(writeMode ? 'Issue closed (not planned)!' : 'Close logged (dry-run, read-only mode)')
-    } catch (err) {
-      setActionStatus(`Failed: ${err}`)
+    // Optimistic UI: update state and add a synthetic close event
+    if (issueDetail) {
+      setIssueDetail(prev => prev ? { ...prev, state: 'CLOSED' } : prev)
     }
-    setTimeout(() => setActionStatus(null), 3000)
+    setActionStatus(`Closing issue as ${reasonLabel}…`)
+
+    try {
+      await window.repoAssist.closeIssue(repo, number, reason)
+
+      if (!writeMode) {
+        setActionStatus('Close logged (dry-run, read-only mode)')
+        setClosing(false)
+        setTimeout(() => setActionStatus(null), 3000)
+        return
+      }
+
+      // Poll to confirm the issue is closed on GitHub (up to 10s)
+      setActionStatus(`Issue closed as ${reasonLabel} — confirming…`)
+      const deadline = Date.now() + 10000
+      const poll = async (): Promise<boolean> => {
+        while (Date.now() < deadline) {
+          try {
+            const fresh = await window.repoAssist.getIssueDetail(repo, number)
+            if (fresh && (fresh.state === 'CLOSED' || fresh.state === 'closed')) {
+              return true
+            }
+          } catch { /* ignore poll errors */ }
+          await new Promise(r => setTimeout(r, 1500))
+        }
+        return false
+      }
+      const confirmed = await poll()
+      if (confirmed) {
+        setActionStatus(`Issue closed as ${reasonLabel} ✓`)
+        setTimeout(() => onClose(), 800)
+      } else {
+        setActionStatus(`Issue closed as ${reasonLabel} (confirmation timed out)`)
+        setTimeout(() => onClose(), 2000)
+      }
+    } catch (err) {
+      // Revert optimistic state on failure
+      if (issueDetail) {
+        setIssueDetail(prev => prev ? { ...prev, state: 'OPEN' } : prev)
+      }
+      setClosing(false)
+      setActionStatus(`Failed: ${err}`)
+      setTimeout(() => setActionStatus(null), 3000)
+    }
   }
 
   const handleMarkReady = async () => {
@@ -418,10 +451,10 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
         <div className="detail-actions">
           {issueDetail.state !== 'CLOSED' && issueDetail.state !== 'closed' && (
             <>
-              <Button size="small" variant="primary" onClick={handleCloseIssueCompleted}>
+              <Button size="small" variant="primary" onClick={() => handleCloseIssue('completed')} disabled={closing}>
                 {writeMode ? 'Close (completed)' : 'Close (completed, dry-run)'}
               </Button>
-              <Button size="small" variant="danger" onClick={handleCloseIssueNotPlanned}>
+              <Button size="small" variant="danger" onClick={() => handleCloseIssue('not_planned')} disabled={closing}>
                 {writeMode ? 'Close (not planned)' : 'Close (not planned, dry-run)'}
               </Button>
             </>
