@@ -21,6 +21,7 @@ apt-get install -y -qq \
   libgbm1 \
   libpango-1.0-0 \
   libcairo2 \
-  libasound2t64
+  libasound2t64 \
+  fonts-noto-color-emoji
 
 echo "Done. You can now run: npm run dev"

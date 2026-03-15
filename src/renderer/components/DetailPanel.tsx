@@ -40,11 +40,11 @@ function sanitizeHtml(html: string): string {
 /** Render markdown to sanitized HTML; converts #N to in-app links */
 function renderMarkdown(md: string, repo?: string): string {
   try {
-    // Convert #N references to special links before parsing
+    // Convert bare #N references to proper GitHub links before parsing
     let processed = md
     if (repo) {
-      processed = md.replace(/(^|[^&\w])#(\d+)\b/g, (_, prefix, num) =>
-        `${prefix}<a href="#" class="issue-ref-link" data-repo="${repo}" data-number="${num}">#${num}</a>`
+      processed = md.replace(/(^|[^&\w[])#(\d+)\b/g, (_, prefix, num) =>
+        `${prefix}[#${num}](https://github.com/${repo}/issues/${num})`
       )
     }
     const raw = marked.parse(processed)
@@ -128,10 +128,9 @@ interface DetailPanelProps {
   number: number
   writeMode: boolean
   onClose: () => void
-  onNavigateToItem?: (repo: string, number: number) => void
 }
 
-export function DetailPanel({ type, repo, number, writeMode, onClose, onNavigateToItem }: DetailPanelProps) {
+export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPanelProps) {
   const [issueDetail, setIssueDetail] = useState<IssueDetail | null>(null)
   const [prDetail, setPrDetail] = useState<PRDetail | null>(null)
   const [prDiff, setPrDiff] = useState<string | null>(null)
@@ -153,23 +152,6 @@ export function DetailPanel({ type, repo, number, writeMode, onClose, onNavigate
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [onClose])
-
-  // Handle clicks on #N issue reference links in rendered markdown
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      if (target.classList.contains('issue-ref-link')) {
-        e.preventDefault()
-        const linkRepo = target.getAttribute('data-repo')
-        const linkNum = parseInt(target.getAttribute('data-number') || '', 10)
-        if (linkRepo && linkNum && onNavigateToItem) {
-          onNavigateToItem(linkRepo, linkNum)
-        }
-      }
-    }
-    document.addEventListener('click', handler)
-    return () => document.removeEventListener('click', handler)
-  }, [onNavigateToItem])
 
   useEffect(() => {
     setLoading(true)

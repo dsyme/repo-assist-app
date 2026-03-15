@@ -282,12 +282,29 @@ export class GhBridge {
   }
 
   async getRecentRepos(): Promise<unknown[]> {
+    // Use the user's events to find repos they've actually been active in
+    // Don't use --paginate as it outputs multiple JSON arrays that can't be parsed
     const result = await this.exec(
-      `api user/repos --jq '[.[] | {fullName: .full_name, description: .description, updatedAt: .updated_at}] | sort_by(.updatedAt) | reverse | .[:10]'`
+      `api users/{owner}/events --jq '.[].repo.name'`
     )
     if (result.exitCode !== 0) return []
     try {
-      return JSON.parse(result.stdout)
+      // Deduplicate repo names from line-separated output
+      const names = result.stdout.trim().split('\n').filter(Boolean)
+      const unique = [...new Set(names)].slice(0, 15)
+      // Fetch descriptions in parallel
+      const repos = await Promise.all(
+        unique.map(async fullName => {
+          const info = await this.exec(`api repos/${fullName} --jq '{fullName: .full_name, description: .description}'`)
+          if (info.exitCode !== 0) return { fullName, description: '' }
+          try {
+            return JSON.parse(info.stdout) as { fullName: string; description: string }
+          } catch {
+            return { fullName, description: '' }
+          }
+        })
+      )
+      return repos
     } catch {
       return []
     }
@@ -401,6 +418,12 @@ export class GhBridge {
     // Build categorised data for the prompt
     const sections: string[] = []
 
+    // Helper to make a GitHub link for an issue/PR number
+    const ghLink = (repo: string, type: 'issue' | 'pr', num: number) => {
+      const path = type === 'pr' ? 'pull' : 'issues'
+      return `[#${num}](https://github.com/${repo}/${path}/${num})`
+    }
+
     // Automation items (open, with attention status)
     const automationLines: string[] = []
     for (const item of allAutomationItems.slice(0, 25)) {
@@ -408,7 +431,7 @@ export class GhBridge {
       const actName = item.lastActivity.automationName || item.lastActivity.actor
       const bodySnippet = item.lastActivity.body ? ` — ${item.lastActivity.body.substring(0, 120).replace(/\n/g, ' ')}` : ''
       const needsAttention = ptalItems.some(p => p.key === item.key) ? ' [NEEDS ATTENTION]' : ''
-      automationLines.push(`- ${shortRepo} ${item.type} #${item.number}: "${item.title}" (${item.lastActivity.type} by ${actName}${bodySnippet})${needsAttention}`)
+      automationLines.push(`- ${shortRepo} ${item.type} ${ghLink(item.repo, item.type, item.number)}: "${item.title}" (${item.lastActivity.type} by ${actName}${bodySnippet})${needsAttention}`)
     }
     if (automationLines.length > 0) {
       sections.push(`=== AUTOMATION ACTIVITY (open items with bot/agent involvement) ===\n${automationLines.join('\n')}`)
@@ -420,7 +443,7 @@ export class GhBridge {
       const shortRepo = repo.split('/').pop() || repo
       for (const pr of merged) {
         const bot = isAutomationActor(pr.author) ? ' [BOT]' : ''
-        mergedLines.push(`- ${shortRepo} pr #${pr.number}: "${pr.title}" by ${pr.author}${bot}, merged ${pr.mergedAt.substring(0, 10)}`)
+        mergedLines.push(`- ${shortRepo} pr ${ghLink(repo, 'pr', pr.number)}: "${pr.title}" by ${pr.author}${bot}, merged ${pr.mergedAt.substring(0, 10)}`)
       }
     }
     if (mergedLines.length > 0) {
@@ -432,7 +455,7 @@ export class GhBridge {
     for (const { repo, closed } of supplementary) {
       const shortRepo = repo.split('/').pop() || repo
       for (const issue of closed) {
-        closedLines.push(`- ${shortRepo} issue #${issue.number}: "${issue.title}" by ${issue.author}, closed ${issue.closedAt.substring(0, 10)}`)
+        closedLines.push(`- ${shortRepo} issue ${ghLink(repo, 'issue', issue.number)}: "${issue.title}" by ${issue.author}, closed ${issue.closedAt.substring(0, 10)}`)
       }
     }
     if (closedLines.length > 0) {
@@ -444,7 +467,7 @@ export class GhBridge {
     for (const { repo, newIssues } of supplementary) {
       const shortRepo = repo.split('/').pop() || repo
       for (const issue of newIssues) {
-        newLines.push(`- ${shortRepo} issue #${issue.number}: "${issue.title}" by ${issue.author}, opened ${issue.createdAt.substring(0, 10)}`)
+        newLines.push(`- ${shortRepo} issue ${ghLink(repo, 'issue', issue.number)}: "${issue.title}" by ${issue.author}, opened ${issue.createdAt.substring(0, 10)}`)
       }
     }
     if (newLines.length > 0) {
@@ -462,10 +485,11 @@ export class GhBridge {
 
     const prompt = `You are writing a brief chronicle of what's been happening ${singleRepo ? 'in the GitHub repository' : 'across these GitHub repositories'}: ${repoNames}. This is for a busy open-source maintainer. Today is ${today}. This recap covers roughly ${twoWeeksAgo} to ${today}.
 
-Write in markdown (do NOT wrap in code fences). Use ## headings to break the recap into natural sections. Write in a narrative voice — concise but with texture, like a weekly digest or changelog. Use the occasional emoji sparingly. Reference repos by their short name (e.g. "Deedle" not "fslaborg/Deedle"). Bold PR/issue numbers for scannability.
+Write in markdown (do NOT wrap in code fences). Use ## headings to break the recap into natural sections. Write in a narrative voice — concise but with texture, like a weekly digest or changelog. Use the occasional emoji sparingly. Reference repos by their short name (e.g. "Deedle" not "fslaborg/Deedle").
 
 IMPORTANT RULES:
-- If a category has NO data, SKIP IT ENTIRELY. Do not write a section for it. Do not say "no PRs were merged" — just omit that section.
+- The data below contains markdown links like [#310](https://github.com/...). PRESERVE these links exactly as given — do not strip or rewrite them. Use them in your output.
+- If a category has NO data, SKIP IT ENTIRELY. Do not write a section for it.
 - If very little happened overall, just say so in one or two lines after the date heading. Don't pad it out.
 - Only write sections for categories that actually have items in the data below.
 - Items marked [NEEDS ATTENTION] haven't been acknowledged by the maintainer — call these out clearly.

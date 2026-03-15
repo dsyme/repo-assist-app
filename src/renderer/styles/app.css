@@ -576,8 +576,6 @@ button[aria-disabled="true"] {
   border: 1px solid var(--borderColor-muted, #21262d);
   border-radius: 6px;
   overflow-x: auto;
-  max-height: 400px;
-  overflow-y: auto;
 }
 
 .markdown-body pre code {
@@ -807,6 +805,14 @@ button[aria-disabled="true"] {
   border-color: var(--focus-outlineColor, #58a6ff);
 }
 
+.repo-chooser-section {
+  border-bottom: 1px solid var(--borderColor-muted, #21262d);
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
 .repo-chooser-results {
   max-height: 250px;
   overflow-y: auto;
@@ -984,9 +990,35 @@ button[aria-disabled="true"] {
 }
 
 /* Ensure PTAL items have a max-height for animation */
-.ptal-item {
+.ptal-row {
+  display: flex;
+  align-items: center;
   max-height: 200px;
   transition: opacity 0.2s ease-out, max-height 0.3s ease-out;
+}
+
+.ptal-row .ptal-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.ptal-dismiss-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--fgColor-muted, #8b949e);
+  cursor: pointer;
+  padding: 6px 8px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.ptal-dismiss-btn:hover {
+  color: var(--fgColor-danger, #f85149);
+  background: var(--bgColor-danger-muted, rgba(248, 81, 73, 0.1));
 }
 
 /* ── AI Recap ── */

@@ -7,7 +7,7 @@ import {
   SyncIcon,
   CommentIcon,
   GitCommitIcon,
-  EyeIcon,
+  TrashIcon,
 } from '@primer/octicons-react'
 import { PTALItem, NavState } from '@shared/types'
 
@@ -188,42 +188,43 @@ export function PTALPanel({ repos, filterRepo, onNavigate }: PTALPanelProps) {
                   const isClearing = clearing.has(item.key)
                   const action = ptalActionTitle(item)
                   return (
-                    <ActionList.Item
+                    <div
                       key={item.key}
-                      onClick={() => handleItemClick(item)}
-                      className={`ptal-item fade-in ${isClearing ? 'ptal-clearing' : ''}`}
+                      className={`ptal-row fade-in ${isClearing ? 'ptal-clearing' : ''}`}
                       style={{ animationDelay: `${idx * 40}ms` }}
                     >
-                      <ActionList.LeadingVisual>
-                        {item.type === 'pr'
-                          ? <GitPullRequestIcon size={16} className="gh-icon-open" />
-                          : <IssueOpenedIcon size={16} className="gh-icon-open" />
-                        }
-                      </ActionList.LeadingVisual>
-                      <div className="ptal-item-content">
-                        <div className="ptal-item-header">
-                          <Text style={{ color: 'var(--fgColor-muted)' }}>{action.verb} </Text>
-                          <Text weight="semibold">{action.number}</Text>
-                          <Text style={{ color: 'var(--fgColor-muted)' }}> — </Text>
-                          <Text>{action.title}</Text>
+                      <ActionList.Item
+                        onClick={() => handleItemClick(item)}
+                        className="ptal-item"
+                      >
+                        <ActionList.LeadingVisual>
+                          {item.type === 'pr'
+                            ? <GitPullRequestIcon size={16} className="gh-icon-open" />
+                            : <IssueOpenedIcon size={16} className="gh-icon-open" />
+                          }
+                        </ActionList.LeadingVisual>
+                        <div className="ptal-item-content">
+                          <div className="ptal-item-header">
+                            <Text style={{ color: 'var(--fgColor-muted)' }}>{action.verb} </Text>
+                            <Text weight="semibold">{action.number}</Text>
+                            <Text style={{ color: 'var(--fgColor-muted)' }}> — </Text>
+                            <Text>{action.title}</Text>
+                          </div>
+                          <div className="ptal-item-meta">
+                            <PTALActivityBadge activity={item.lastActivity} />
+                            <RelativeTime date={new Date(item.lastActivity.when)} style={{ fontSize: 12 }} />
+                          </div>
                         </div>
-                        <div className="ptal-item-meta">
-                          <PTALActivityBadge activity={item.lastActivity} />
-                          <RelativeTime date={new Date(item.lastActivity.when)} style={{ fontSize: 12 }} />
-                        </div>
-                      </div>
-                      <ActionList.TrailingVisual>
-                        <Button
-                          size="small"
-                          variant="invisible"
-                          onClick={(e) => { e.stopPropagation(); handleClear(item) }}
-                          aria-label="Clear item"
-                          title="I've seen this — clear it"
-                        >
-                          <EyeIcon size={16} />
-                        </Button>
-                      </ActionList.TrailingVisual>
-                    </ActionList.Item>
+                      </ActionList.Item>
+                      <button
+                        className="ptal-dismiss-btn"
+                        onClick={() => handleClear(item)}
+                        aria-label="Dismiss item"
+                        title="Dismiss"
+                      >
+                        <TrashIcon size={14} />
+                      </button>
+                    </div>
                   )
                 })}
               </ActionList>

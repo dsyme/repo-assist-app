@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Text, TreeView, CounterLabel, Button } from '@primer/react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Text, TreeView, CounterLabel, Button, Spinner } from '@primer/react'
 import {
   RepoIcon,
   IssueOpenedIcon,
@@ -38,6 +38,9 @@ export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount, onAd
   const [repoSearch, setRepoSearch] = useState('')
   const [searchResults, setSearchResults] = useState<{ fullName: string; description: string }[]>([])
   const [searching, setSearching] = useState(false)
+  const [recentRepos, setRecentRepos] = useState<{ fullName: string; description: string }[]>([])
+  const [loadingRecent, setLoadingRecent] = useState(false)
+  const chooserRef = useRef<HTMLDivElement>(null)
 
   const toggleRepo = (repo: string) => {
     setExpandedRepos(prev => {
@@ -65,10 +68,55 @@ export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount, onAd
 
   const handleAddRepo = (fullName: string) => {
     onAddRepo?.(fullName)
+    closeChooser()
+  }
+
+  const closeChooser = useCallback(() => {
     setShowRepoChooser(false)
     setRepoSearch('')
     setSearchResults([])
-  }
+    setRecentRepos([])
+  }, [])
+
+  const openChooser = useCallback(() => {
+    setShowRepoChooser(prev => {
+      if (prev) {
+        // Closing
+        closeChooser()
+        return false
+      }
+      return true
+    })
+  }, [closeChooser])
+
+  // Fetch recent repos when chooser opens
+  useEffect(() => {
+    if (!showRepoChooser) return
+    let cancelled = false
+    setLoadingRecent(true)
+    window.repoAssist.getRecentRepos().then(results => {
+      if (!cancelled) {
+        setRecentRepos(results.filter(r => !repos.includes(r.fullName)))
+        setLoadingRecent(false)
+      }
+    }).catch(() => {
+      if (!cancelled) setLoadingRecent(false)
+    })
+    return () => { cancelled = true }
+  }, [showRepoChooser, repos])
+
+  // Escape key closes chooser
+  useEffect(() => {
+    if (!showRepoChooser) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        closeChooser()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [showRepoChooser, closeChooser])
 
   return (
     <div className="sidebar">
@@ -100,7 +148,7 @@ export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount, onAd
         {/* Add Repository button */}
         <TreeView.Item
           id="add-repo"
-          onSelect={() => setShowRepoChooser(prev => !prev)}
+          onSelect={() => openChooser()}
         >
           <TreeView.LeadingVisual>
             <PlusCircleIcon />
@@ -238,20 +286,47 @@ export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount, onAd
 
       {/* Repo chooser dialog */}
       {showRepoChooser && (
-        <div className="repo-chooser">
+        <div className="repo-chooser" ref={chooserRef}>
           <div className="repo-chooser-header">
             <Text weight="semibold">Add Repository</Text>
-            <Button size="small" variant="invisible" onClick={() => { setShowRepoChooser(false); setSearchResults([]); setRepoSearch('') }}>
+            <Button size="small" variant="invisible" onClick={closeChooser}>
               <XIcon size={14} />
             </Button>
           </div>
+
+          {/* Recent repos */}
+          {(loadingRecent || recentRepos.length > 0) && (
+            <div className="repo-chooser-section">
+              <Text size="small" style={{ color: 'var(--fgColor-muted)', padding: '4px 8px', display: 'block' }}>Recent</Text>
+              {loadingRecent && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px' }}>
+                  <Spinner size="small" />
+                  <Text size="small" style={{ color: 'var(--fgColor-muted)' }}>Loading recent repos…</Text>
+                </div>
+              )}
+              {recentRepos.map(r => (
+                <button
+                  key={r.fullName}
+                  className="repo-chooser-result"
+                  onClick={() => handleAddRepo(r.fullName)}
+                >
+                  <Text weight="semibold" size="small">{r.fullName}</Text>
+                  {r.description && <Text size="small" style={{ color: 'var(--fgColor-muted)' }}>{r.description}</Text>}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="repo-chooser-search">
             <input
               className="repo-chooser-input"
               placeholder="Search repositories (e.g. owner/repo)"
               value={repoSearch}
               onChange={e => setRepoSearch(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleRepoSearch()}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleRepoSearch()
+                if (e.key === 'Escape') closeChooser()
+              }}
               autoFocus
             />
             <Button size="small" onClick={handleRepoSearch} disabled={searching}>

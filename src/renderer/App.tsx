@@ -107,6 +107,44 @@ export default function App() {
     }
   }, [repos])
 
+  // Global click handler: intercept GitHub issue/PR links
+  // Normal click = navigate internally, Shift+click = open in browser
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      // Walk up from click target to find closest <a>
+      const anchor = (e.target as HTMLElement).closest('a')
+      if (!anchor) return
+      const href = anchor.getAttribute('href')
+      if (!href) return
+
+      // Parse GitHub issue/PR URLs
+      const match = href.match(/^https?:\/\/github\.com\/([^/]+\/[^/]+)\/(issues|pull)\/(\d+)/)
+      if (!match) {
+        // Non-GitHub link or non-issue/PR — open externally
+        e.preventDefault()
+        window.repoAssist.openExternal(href)
+        return
+      }
+
+      e.preventDefault()
+      const [, linkRepo, linkType, linkNum] = match
+      const number = parseInt(linkNum, 10)
+
+      if (e.shiftKey) {
+        // Shift+click: open externally
+        window.repoAssist.openExternal(href)
+        return
+      }
+
+      // Navigate internally
+      returnNavRef.current = { ...nav }
+      const repoSection = linkType === 'pull' ? 'prs' : 'issues'
+      setNav({ section: null, repo: linkRepo, repoSection, selectedItem: number })
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [nav])
+
   if (loading) {
     return (
       <div className="loading-center">
@@ -227,11 +265,6 @@ export default function App() {
                 } else {
                   setNav(prev => ({ ...prev, selectedItem: null }))
                 }
-              }}
-              onNavigateToItem={(targetRepo, num) => {
-                // Navigate to the item — try issues first, fallback to prs
-                returnNavRef.current = { ...nav }
-                setNav({ section: null, repo: targetRepo, repoSection: 'issues', selectedItem: num })
               }}
             />
           )}
