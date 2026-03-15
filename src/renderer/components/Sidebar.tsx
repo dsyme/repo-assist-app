@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Text, TreeView, CounterLabel } from '@primer/react'
+import { Text, TreeView, CounterLabel, Button } from '@primer/react'
 import {
   ChecklistIcon,
   RepoIcon,
@@ -8,6 +8,9 @@ import {
   PlayIcon,
   TerminalIcon,
   WorkflowIcon,
+  PlusCircleIcon,
+  XIcon,
+  SearchIcon,
 } from '@primer/octicons-react'
 import { NavState, RepoIssue, RepoPR, RepoRun } from '@shared/types'
 
@@ -25,10 +28,15 @@ interface SidebarProps {
   onNavigate: (nav: NavState) => void
   isUnread: (repo: string, number: number, updatedAt: string) => boolean
   getUnreadCount: (repo: string, items: { number: number; updatedAt: string }[]) => number
+  onAddRepo?: (repo: string) => void
 }
 
-export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount }: SidebarProps) {
+export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount, onAddRepo }: SidebarProps) {
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set())
+  const [showRepoChooser, setShowRepoChooser] = useState(false)
+  const [repoSearch, setRepoSearch] = useState('')
+  const [searchResults, setSearchResults] = useState<{ fullName: string; description: string }[]>([])
+  const [searching, setSearching] = useState(false)
 
   const toggleRepo = (repo: string) => {
     setExpandedRepos(prev => {
@@ -40,6 +48,26 @@ export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount }: Si
   }
 
   const repoShortName = (repo: string) => repo.split('/').pop() || repo
+
+  const handleRepoSearch = async () => {
+    if (!repoSearch.trim()) return
+    setSearching(true)
+    try {
+      const results = await window.repoAssist.searchRepos(repoSearch)
+      setSearchResults(results)
+    } catch {
+      setSearchResults([])
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  const handleAddRepo = (fullName: string) => {
+    onAddRepo?.(fullName)
+    setShowRepoChooser(false)
+    setRepoSearch('')
+    setSearchResults([])
+  }
 
   return (
     <div className="sidebar">
@@ -54,6 +82,17 @@ export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount }: Si
             <ChecklistIcon />
           </TreeView.LeadingVisual>
           <Text weight={nav.section === 'recap' ? 'semibold' : 'normal'}>Recap</Text>
+        </TreeView.Item>
+
+        {/* Add Repository button */}
+        <TreeView.Item
+          id="add-repo"
+          onSelect={() => setShowRepoChooser(prev => !prev)}
+        >
+          <TreeView.LeadingVisual>
+            <PlusCircleIcon />
+          </TreeView.LeadingVisual>
+          <Text size="small" style={{ color: 'var(--fgColor-muted)' }}>Add Repository</Text>
         </TreeView.Item>
 
         {/* Repositories */}
@@ -83,6 +122,18 @@ export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount }: Si
               </span>
 
               <TreeView.SubTree>
+                {/* Automations — first */}
+                <TreeView.Item
+                  id={`${repo}/automations`}
+                  current={nav.repo === repo && nav.repoSection === 'automations'}
+                  onSelect={() => onNavigate({ section: null, repo, repoSection: 'automations', selectedItem: null })}
+                >
+                  <TreeView.LeadingVisual>
+                    <WorkflowIcon className="gh-icon-accent" />
+                  </TreeView.LeadingVisual>
+                  <Text>Automations</Text>
+                </TreeView.Item>
+
                 {/* Issues */}
                 <TreeView.Item
                   id={`${repo}/issues`}
@@ -119,7 +170,7 @@ export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount }: Si
                   </span>
                 </TreeView.Item>
 
-                {/* Runs */}
+                {/* Automation Runs */}
                 <TreeView.Item
                   id={`${repo}/runs`}
                   current={nav.repo === repo && nav.repoSection === 'runs'}
@@ -128,19 +179,7 @@ export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount }: Si
                   <TreeView.LeadingVisual>
                     <PlayIcon />
                   </TreeView.LeadingVisual>
-                  <Text>Actions Runs</Text>
-                </TreeView.Item>
-
-                {/* Automations */}
-                <TreeView.Item
-                  id={`${repo}/automations`}
-                  current={nav.repo === repo && nav.repoSection === 'automations'}
-                  onSelect={() => onNavigate({ section: null, repo, repoSection: 'automations', selectedItem: null })}
-                >
-                  <TreeView.LeadingVisual>
-                    <WorkflowIcon className="gh-icon-accent" />
-                  </TreeView.LeadingVisual>
-                  <Text>Automations</Text>
+                  <Text>Automation Runs</Text>
                 </TreeView.Item>
               </TreeView.SubTree>
             </TreeView.Item>
@@ -159,6 +198,46 @@ export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount }: Si
           <Text>Command Log</Text>
         </TreeView.Item>
       </TreeView>
+
+      {/* Repo chooser dialog */}
+      {showRepoChooser && (
+        <div className="repo-chooser">
+          <div className="repo-chooser-header">
+            <Text weight="semibold">Add Repository</Text>
+            <Button size="small" variant="invisible" onClick={() => { setShowRepoChooser(false); setSearchResults([]); setRepoSearch('') }}>
+              <XIcon size={14} />
+            </Button>
+          </div>
+          <div className="repo-chooser-search">
+            <input
+              className="repo-chooser-input"
+              placeholder="Search repositories (e.g. owner/repo)"
+              value={repoSearch}
+              onChange={e => setRepoSearch(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleRepoSearch()}
+              autoFocus
+            />
+            <Button size="small" onClick={handleRepoSearch} disabled={searching}>
+              <SearchIcon size={14} />
+            </Button>
+          </div>
+          {searching && <Text size="small" style={{ padding: 8, color: 'var(--fgColor-muted)' }}>Searching…</Text>}
+          <div className="repo-chooser-results">
+            {searchResults.map(r => (
+              <button
+                key={r.fullName}
+                className="repo-chooser-result"
+                onClick={() => handleAddRepo(r.fullName)}
+                disabled={repos.includes(r.fullName)}
+              >
+                <Text weight="semibold" size="small">{r.fullName}</Text>
+                {r.description && <Text size="small" style={{ color: 'var(--fgColor-muted)' }}>{r.description}</Text>}
+                {repos.includes(r.fullName) && <Text size="small" style={{ color: 'var(--fgColor-muted)' }}>Already added</Text>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

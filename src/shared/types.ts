@@ -112,6 +112,12 @@ export interface RepoAssistAPI {
   getIssueDetail: (repo: string, number: number) => Promise<IssueDetail | null>
   getPRDetail: (repo: string, number: number) => Promise<PRDetail | null>
   getPRDiff: (repo: string, number: number) => Promise<string>
+  getFileContent: (repo: string, path: string) => Promise<string | null>
+  closeIssue: (repo: string, number: number, reason: string) => Promise<unknown>
+  searchRepos: (query: string) => Promise<{ fullName: string; description: string }[]>
+  getRecentRepos: () => Promise<{ fullName: string; description: string }[]>
+  addRepo: (repo: string) => Promise<string[]>
+  removeRepo: (repo: string) => Promise<string[]>
   getMonthlyActivity: (repo: string) => Promise<unknown>
   getEvents: (repo: string) => Promise<unknown[]>
   getCommandLog: () => Promise<unknown[]>

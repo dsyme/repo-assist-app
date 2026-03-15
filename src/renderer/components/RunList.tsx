@@ -16,15 +16,17 @@ function RunStatusIcon({ status, conclusion }: { status: string; conclusion: str
 }
 
 export function RunList({ repo, runs }: RunListProps) {
+  const filtered = runs.filter(r => r.conclusion !== 'skipped')
+
   return (
     <div>
       <div className="panel-header">
-        <h2>Actions Runs — {repo.split('/').pop()}</h2>
-        <span className="subtitle">{runs.length} recent runs</span>
+        <h2>Automation Runs — {repo.split('/').pop()}</h2>
+        <span className="subtitle">{filtered.length} recent runs</span>
       </div>
 
       <ActionList>
-        {runs.map(run => (
+        {filtered.map(run => (
           <ActionList.Item key={run.databaseId}>
             <ActionList.LeadingVisual>
               <RunStatusIcon status={run.status} conclusion={run.conclusion} />
@@ -44,9 +46,9 @@ export function RunList({ repo, runs }: RunListProps) {
         ))}
       </ActionList>
 
-      {runs.length === 0 && (
+      {filtered.length === 0 && (
         <div className="empty-state">
-          <Text>No recent action runs</Text>
+          <Text>No recent automation runs</Text>
         </div>
       )}
     </div>

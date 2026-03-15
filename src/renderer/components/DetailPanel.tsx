@@ -32,23 +32,30 @@ function sanitizeHtml(html: string): string {
     .replace(/javascript:/gi, '')
 }
 
-/** Render markdown to sanitized HTML */
-function renderMarkdown(md: string): string {
+/** Render markdown to sanitized HTML; converts #N to in-app links */
+function renderMarkdown(md: string, repo?: string): string {
   try {
-    const raw = marked.parse(md)
+    // Convert #N references to special links before parsing
+    let processed = md
+    if (repo) {
+      processed = md.replace(/(^|[^&\w])#(\d+)\b/g, (_, prefix, num) =>
+        `${prefix}<a href="#" class="issue-ref-link" data-repo="${repo}" data-number="${num}">#${num}</a>`
+      )
+    }
+    const raw = marked.parse(processed)
     if (typeof raw === 'string') return sanitizeHtml(raw)
-    return sanitizeHtml(String(md))
+    return sanitizeHtml(String(processed))
   } catch {
     return sanitizeHtml(md)
   }
 }
 
 /** Truncate very long text and provide expand toggle */
-function TruncatedMarkdown({ content, maxLen = 8000 }: { content: string; maxLen?: number }) {
+function TruncatedMarkdown({ content, repo, maxLen = 8000 }: { content: string; repo?: string; maxLen?: number }) {
   const [expanded, setExpanded] = useState(false)
   const isTruncated = content.length > maxLen
   const display = !expanded && isTruncated ? content.slice(0, maxLen) + '\n\n…' : content
-  const html = useMemo(() => renderMarkdown(display), [display])
+  const html = useMemo(() => renderMarkdown(display, repo), [display, repo])
 
   return (
     <div>
@@ -79,18 +86,36 @@ interface DetailPanelProps {
   number: number
   writeMode: boolean
   onClose: () => void
+  onNavigateToItem?: (repo: string, number: number) => void
 }
 
-export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPanelProps) {
+export function DetailPanel({ type, repo, number, writeMode, onClose, onNavigateToItem }: DetailPanelProps) {
   const [issueDetail, setIssueDetail] = useState<IssueDetail | null>(null)
   const [prDetail, setPrDetail] = useState<PRDetail | null>(null)
   const [prDiff, setPrDiff] = useState<string | null>(null)
-  const [diffExpanded, setDiffExpanded] = useState(false)
+  const [diffExpanded, setDiffExpanded] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [commentText, setCommentText] = useState('')
   const [actionStatus, setActionStatus] = useState<string | null>(null)
   const [visibleComments, setVisibleComments] = useState(INITIAL_COMMENT_COUNT)
+
+  // Handle clicks on #N issue reference links in rendered markdown
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (target.classList.contains('issue-ref-link')) {
+        e.preventDefault()
+        const linkRepo = target.getAttribute('data-repo')
+        const linkNum = parseInt(target.getAttribute('data-number') || '', 10)
+        if (linkRepo && linkNum && onNavigateToItem) {
+          onNavigateToItem(linkRepo, linkNum)
+        }
+      }
+    }
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [onNavigateToItem])
 
   useEffect(() => {
     setLoading(true)
@@ -169,6 +194,28 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
     setTimeout(() => setActionStatus(null), 3000)
   }
 
+  const handleCloseIssueCompleted = async () => {
+    setActionStatus('Closing issue (completed)…')
+    try {
+      await window.repoAssist.closeIssue(repo, number, 'completed')
+      setActionStatus(writeMode ? 'Issue closed (completed)!' : 'Close logged (dry-run, read-only mode)')
+    } catch (err) {
+      setActionStatus(`Failed: ${err}`)
+    }
+    setTimeout(() => setActionStatus(null), 3000)
+  }
+
+  const handleCloseIssueNotPlanned = async () => {
+    setActionStatus('Closing issue (not planned)…')
+    try {
+      await window.repoAssist.closeIssue(repo, number, 'not_planned')
+      setActionStatus(writeMode ? 'Issue closed (not planned)!' : 'Close logged (dry-run, read-only mode)')
+    } catch (err) {
+      setActionStatus(`Failed: ${err}`)
+    }
+    setTimeout(() => setActionStatus(null), 3000)
+  }
+
   if (loading) {
     return (
       <div className="detail-panel fade-in">
@@ -222,7 +269,7 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
               <Text weight="semibold" size="small">{c.author?.login ?? 'unknown'}</Text>
               <RelativeTime date={new Date(c.createdAt)} />
             </div>
-            <TruncatedMarkdown content={c.body || ''} maxLen={4000} />
+            <TruncatedMarkdown content={c.body || ''} repo={repo} maxLen={4000} />
           </div>
         ))}
         {remaining > 0 && (
@@ -270,7 +317,7 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
         {/* Body — rendered as markdown */}
         <div className="detail-body">
           {issueDetail.body ? (
-            <TruncatedMarkdown content={issueDetail.body} />
+            <TruncatedMarkdown content={issueDetail.body} repo={repo} />
           ) : (
             <Text size="small" style={{ color: 'var(--fgColor-muted)', fontStyle: 'italic' }}>No description provided.</Text>
           )}
@@ -281,6 +328,16 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
 
         {/* Actions */}
         <div className="detail-actions">
+          {issueDetail.state !== 'CLOSED' && issueDetail.state !== 'closed' && (
+            <>
+              <Button size="small" variant="primary" onClick={handleCloseIssueCompleted}>
+                {writeMode ? 'Close (completed)' : 'Close (completed, dry-run)'}
+              </Button>
+              <Button size="small" variant="danger" onClick={handleCloseIssueNotPlanned}>
+                {writeMode ? 'Close (not planned)' : 'Close (not planned, dry-run)'}
+              </Button>
+            </>
+          )}
           <Button size="small" leadingVisual={LinkExternalIcon} onClick={openInGitHub}>
             Open in GitHub
           </Button>
@@ -345,7 +402,7 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
         {/* Body — rendered as markdown */}
         <div className="detail-body">
           {prDetail.body ? (
-            <TruncatedMarkdown content={prDetail.body} />
+            <TruncatedMarkdown content={prDetail.body} repo={repo} />
           ) : (
             <Text size="small" style={{ color: 'var(--fgColor-muted)', fontStyle: 'italic' }}>No description provided.</Text>
           )}
@@ -401,7 +458,7 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
                   </Label>
                   <RelativeTime date={new Date(r.createdAt)} />
                 </div>
-                {r.body && <TruncatedMarkdown content={r.body} maxLen={4000} />}
+                {r.body && <TruncatedMarkdown content={r.body} repo={repo} maxLen={4000} />}
               </div>
             ))}
           </div>

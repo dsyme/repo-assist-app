@@ -1,8 +1,8 @@
 # Repo Assist — Product Requirements Document
 
-**Version:** 0.2  
+**Version:** 0.3  
 **Date:** 2026-03-15  
-**Status:** Active — exploratory implementation in progress
+**Status:** Active — functional prototype running on WSL2
 
 ---
 
@@ -52,8 +52,8 @@ The app embraces the model where **most work is done by automated workflows** an
 
 | Layer | Technology | Rationale |
 |-------|-----------|-----------|
-| **Desktop Shell** | Electron 33+ | Native window on Mac, Linux, and WSL2 (via WSLg). Single binary distribution. |
-| **UI Framework** | React 18+ with TypeScript | Industry standard, large ecosystem |
+| **Desktop Shell** | Electron 41 | Native window on Mac, Linux, and WSL2 (via WSLg). Single binary distribution. |
+| **UI Framework** | React 19 with TypeScript 5.9 | Industry standard, large ecosystem |
 | **Design System** | `@primer/react` + `@primer/primitives` | GitHub's own design system — the app looks and feels like GitHub |
 | **Build Tool** | Vite | Fast dev server, excellent Electron integration via `electron-vite` |
 | **Backend (main process)** | Node.js (Electron main) | Runs `gh` CLI commands, manages local state, orchestrates AI calls |
@@ -138,15 +138,18 @@ The app uses a **three-column layout** inspired by GitHub's own UI:
 
 **Left Panel (Navigation — ~250px)**
 - **Recap**: Cross-repository checklist of actionable items
+- **Add Repository**: Search and add repos to monitor
 - **Repositories**: Expandable tree, each with:
-  - **Automations**: Workflow specs (`.github/workflows/` YAML + agentic workflow specs)
-  - **Issues**: Grouped by primary label, with unread indicators (bold)
-  - **PRs**: Open PRs, with CI status badges
+  - **Automations**: Workflow specs (`.github/workflows/` YAML + agentic workflow specs). Agentic workflows detected by `.lock.yml` presence or `copilot`/`agent` in name/path. Click to view source in-app; `.md` files show frontmatter + rendered body.
+  - **Issues**: Grouped by primary label, with unread indicators (bold). Close issue (completed/not planned) actions.
+  - **Pull Requests**: Open PRs, with CI status badges. Merge/close actions.
+  - **Automation Runs**: Recent workflow runs (skipped runs filtered out)
 - **Command Log**: Scrollable log of all `gh` commands executed
 
 **Center Panel (Content)**
 - Displays the selected item: issue thread, PR diff summary, action run log, workflow spec, or recap checklist
-- Markdown rendered with GitHub-style formatting (using Primer's markdown-body class)
+- Markdown rendered with GitHub-style formatting, `#N` references link to in-app issue/PR detail
+- PR diffs shown expanded by default with colored unified diff view
 
 **Right Panel (Context — collapsible)**
 - Quick actions, related items, metadata
@@ -211,10 +214,11 @@ The app feeds the above data into a locally-authenticated AI model (`copilot` / 
 ### 3.5 Automations View
 
 For each repository:
-- **Agentic Workflows**: List of configured agentic workflows (e.g., `repo-assist`) with their YAML config and markdown spec
-- **GitHub Actions Workflows**: Standard `.github/workflows/*.yml` files  
-- **Recent Runs**: Last N runs with status, duration, trigger info
-- Click a run to see its logs (streamed via `gh run view --log`)
+- **Agentic Workflows**: Detected by checking for a `.lock.yml` sibling file, or `copilot`/`agent` in the workflow name/path. Displayed with a Copilot icon and "Agentic" label.
+- **CI/CD Workflows**: Standard `.github/workflows/*.yml` files
+- **Detail View**: Click any workflow to see its source. For `.md` files (agentic workflow specs), frontmatter is shown in a code block and the body is rendered as markdown. For `.yml` files, full source is shown in a code block.
+- **Actions**: View on GitHub, Edit on GitHub buttons in detail view
+- **Automation Runs**: Renamed from "Action Runs". Last N runs with status, duration, trigger info. Skipped runs are filtered out.
 
 ### 3.6 Command Log
 
@@ -243,6 +247,8 @@ A persistent panel (toggleable) showing every `gh` command the app has executed:
 ```
 
 Fetched on startup via `gh api repos/{user}/.repo-assist/contents/config.json`. Updates pushed back via `gh api` PUT. Editable from within the app via a Settings panel.
+
+**Repo Chooser**: Users can add repositories directly from the sidebar using the "+" button below Recap. This opens a search dialog that queries GitHub via `gh search repos`. Added repos are persisted to `~/.repo-assist/settings.json` and merged with the default repo list.
 
 **Local state** stored in `~/.repo-assist/` (not synced):
 
@@ -346,8 +352,8 @@ When the user views an issue/PR detail, `last_read_at` is updated to `NOW()`.
 ## 6. Milestones
 
 ### M0: Technical Validation (Current)
-- [x] PRD written
-- [ ] Electron + Vite + React + Primer scaffold running
+- [x] PRD written (v0.3)
+- [x] Electron + Vite + React + Primer scaffold running
 - [ ] `gh` CLI bridge executing commands and returning JSON
 - [ ] Basic left panel rendering repo tree with real data from Deedle/FSharp.Formatting
 - [ ] WSL2 Electron window validated

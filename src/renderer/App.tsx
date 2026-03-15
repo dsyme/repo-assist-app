@@ -88,6 +88,24 @@ export default function App() {
     return items.filter(item => isUnread(repo, item.number, item.updatedAt)).length
   }, [isUnread])
 
+  const handleAddRepo = useCallback(async (repo: string) => {
+    await window.repoAssist.addRepo(repo)
+    if (!repos.includes(repo)) {
+      setRepos(prev => [...prev, repo])
+      // Fetch data for the new repo
+      try {
+        const [issues, prs, runs] = await Promise.all([
+          window.repoAssist.getIssues(repo),
+          window.repoAssist.getPRs(repo),
+          window.repoAssist.getRuns(repo),
+        ])
+        setRepoData(prev => ({ ...prev, [repo]: { issues, prs, runs, loading: false } }))
+      } catch {
+        setRepoData(prev => ({ ...prev, [repo]: { issues: [], prs: [], runs: [], loading: false } }))
+      }
+    }
+  }, [repos])
+
   if (loading) {
     return (
       <div className="loading-center">
@@ -143,6 +161,7 @@ export default function App() {
           onNavigate={setNav}
           isUnread={isUnread}
           getUnreadCount={getUnreadCount}
+          onAddRepo={handleAddRepo}
         />
 
         <div className="center-panel">
@@ -191,12 +210,16 @@ export default function App() {
               writeMode={writeMode}
               onClose={() => {
                 if (returnNavRef.current) {
-                  // Return to wherever we came from (e.g. recap)
                   setNav(returnNavRef.current)
                   returnNavRef.current = null
                 } else {
                   setNav(prev => ({ ...prev, selectedItem: null }))
                 }
+              }}
+              onNavigateToItem={(targetRepo, num) => {
+                // Navigate to the item — try issues first, fallback to prs
+                returnNavRef.current = { ...nav }
+                setNav({ section: null, repo: targetRepo, repoSection: 'issues', selectedItem: num })
               }}
             />
           )}

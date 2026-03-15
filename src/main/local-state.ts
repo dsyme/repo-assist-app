@@ -81,4 +81,27 @@ export class LocalState {
     settings[key] = value
     writeJson(SETTINGS_FILE, settings)
   }
+
+  // Custom repos
+  getCustomRepos(): string[] {
+    const settings = readJson(SETTINGS_FILE)
+    return Array.isArray(settings.customRepos) ? settings.customRepos as string[] : []
+  }
+
+  addRepo(repo: string): void {
+    const settings = readJson(SETTINGS_FILE)
+    const repos = Array.isArray(settings.customRepos) ? settings.customRepos as string[] : []
+    if (!repos.includes(repo)) {
+      repos.push(repo)
+      settings.customRepos = repos
+      writeJson(SETTINGS_FILE, settings)
+    }
+  }
+
+  removeRepo(repo: string): void {
+    const settings = readJson(SETTINGS_FILE)
+    const repos = Array.isArray(settings.customRepos) ? settings.customRepos as string[] : []
+    settings.customRepos = repos.filter(r => r !== repo)
+    writeJson(SETTINGS_FILE, settings)
+  }
 }

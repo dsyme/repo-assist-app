@@ -187,9 +187,60 @@ export class GhBridge {
     )
     if (result.exitCode !== 0) return []
     try {
-      // gh --jq with paginate outputs one JSON object per line
       const lines = result.stdout.trim().split('\n').filter(Boolean)
       return lines.map(line => JSON.parse(line))
+    } catch {
+      return []
+    }
+  }
+
+  async getFileContent(repo: string, path: string): Promise<string | null> {
+    const result = await this.exec(
+      `api repos/${repo}/contents/${path} --jq .content`
+    )
+    if (result.exitCode !== 0 || !result.stdout.trim()) return null
+    try {
+      return Buffer.from(result.stdout.trim(), 'base64').toString('utf-8')
+    } catch {
+      return null
+    }
+  }
+
+  async closeIssue(repo: string, number: number, reason: string, writeMode: boolean): Promise<GhExecResult> {
+    const reasonFlag = reason === 'not_planned' ? '--reason "not planned"' : ''
+    const command = `issue close ${number} -R ${repo} ${reasonFlag}`.trim()
+    if (!writeMode) {
+      this.addToLog({
+        command: `gh ${command}`,
+        startedAt: new Date().toISOString(),
+        durationMs: 0,
+        exitCode: 0,
+        mode: 'dry-run'
+      })
+      return { stdout: '[DRY RUN] Issue would be closed', stderr: '', exitCode: 0, command: `gh ${command}`, durationMs: 0 }
+    }
+    return this.exec(command, 'write')
+  }
+
+  async searchRepos(query: string): Promise<unknown[]> {
+    const result = await this.exec(
+      `search repos "${query}" --json fullName,description,updatedAt --limit 10`
+    )
+    if (result.exitCode !== 0) return []
+    try {
+      return JSON.parse(result.stdout)
+    } catch {
+      return []
+    }
+  }
+
+  async getRecentRepos(): Promise<unknown[]> {
+    const result = await this.exec(
+      `api user/repos --jq '[.[] | {fullName: .full_name, description: .description, updatedAt: .updated_at}] | sort_by(.updatedAt) | reverse | .[:10]'`
+    )
+    if (result.exitCode !== 0) return []
+    try {
+      return JSON.parse(result.stdout)
     } catch {
       return []
     }

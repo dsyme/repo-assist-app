@@ -113,7 +113,14 @@ ipcMain.handle('gh:exec', async (_event, command: string) => {
 })
 
 ipcMain.handle('gh:getRepos', async () => {
-  return ghBridge.getConfiguredRepos()
+  const defaultRepos = await ghBridge.getConfiguredRepos()
+  const customRepos = localState.getCustomRepos()
+  // Merge, deduplicate, preserve order
+  const all = [...defaultRepos]
+  for (const r of customRepos) {
+    if (!all.includes(r)) all.push(r)
+  }
+  return all
 })
 
 ipcMain.handle('gh:getIssues', async (_event, repo: string) => {
@@ -130,6 +137,33 @@ ipcMain.handle('gh:getRuns', async (_event, repo: string) => {
 
 ipcMain.handle('gh:getWorkflows', async (_event, repo: string) => {
   return ghBridge.getWorkflows(repo)
+})
+
+ipcMain.handle('gh:getFileContent', async (_event, repo: string, path: string) => {
+  return ghBridge.getFileContent(repo, path)
+})
+
+ipcMain.handle('gh:closeIssue', async (_event, repo: string, number: number, reason: string) => {
+  const writeMode = localState.getWriteMode()
+  return ghBridge.closeIssue(repo, number, reason, writeMode)
+})
+
+ipcMain.handle('gh:searchRepos', async (_event, query: string) => {
+  return ghBridge.searchRepos(query)
+})
+
+ipcMain.handle('gh:getRecentRepos', async () => {
+  return ghBridge.getRecentRepos()
+})
+
+ipcMain.handle('app:addRepo', async (_event, repo: string) => {
+  localState.addRepo(repo)
+  return localState.getCustomRepos()
+})
+
+ipcMain.handle('app:removeRepo', async (_event, repo: string) => {
+  localState.removeRepo(repo)
+  return localState.getCustomRepos()
 })
 
 ipcMain.handle('app:openExternal', async (_event, url: string) => {

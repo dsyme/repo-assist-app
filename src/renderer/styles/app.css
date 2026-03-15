@@ -713,3 +713,105 @@ html, body, #root {
   border-radius: 6px;
 }
 
+/* ── Repo Chooser ── */
+
+.repo-chooser {
+  position: absolute;
+  top: 60px;
+  left: 8px;
+  right: 8px;
+  z-index: 100;
+  background: var(--bgColor-default, #0d1117);
+  border: 1px solid var(--borderColor-default, #30363d);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+
+.repo-chooser-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.repo-chooser-search {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.repo-chooser-input {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--control-bgColor-rest, #21262d);
+  border: 1px solid var(--borderColor-default, #30363d);
+  border-radius: 6px;
+  color: var(--fgColor-default, #e6edf3);
+  font-size: 13px;
+  outline: none;
+}
+.repo-chooser-input:focus {
+  border-color: var(--focus-outlineColor, #58a6ff);
+}
+
+.repo-chooser-results {
+  max-height: 250px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.repo-chooser-result {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--fgColor-default, #e6edf3);
+}
+.repo-chooser-result:hover:not(:disabled) {
+  background: var(--control-transparent-bgColor-hover, #b1bac41f);
+}
+.repo-chooser-result:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── Issue Reference Links ── */
+
+.issue-ref-link {
+  color: #58a6ff;
+  cursor: pointer;
+  text-decoration: none;
+  font-weight: 600;
+}
+.issue-ref-link:hover {
+  text-decoration: underline;
+}
+
+/* ── Automation Detail ── */
+
+.automation-detail-source {
+  margin: 12px 0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.automation-detail-source pre {
+  margin: 0;
+  padding: 12px 16px;
+  background: #161b22;
+  border: 1px solid var(--borderColor-default, #30363d);
+  border-radius: 6px;
+  font-size: 13px;
+  overflow-x: auto;
+  white-space: pre;
+  color: #e6edf3;
+}
+
