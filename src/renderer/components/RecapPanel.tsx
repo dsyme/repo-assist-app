@@ -1,206 +1,186 @@
-import { useState, useEffect } from 'react'
-import { Text, ActionList, Label, Button, Spinner } from '@primer/react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Text, Button, Spinner, Flash } from '@primer/react'
 import {
-  GitPullRequestIcon,
-  CommentIcon,
-  GitMergeIcon,
-  XCircleIcon,
-  AlertIcon,
-  TagIcon,
-  CheckCircleIcon,
   SyncIcon,
+  TrashIcon,
+  SparkleIcon,
 } from '@primer/octicons-react'
-import { RecapItem, RepoIssue, RepoPR, RepoRun, NavState } from '@shared/types'
+import { marked } from 'marked'
+import { RecapSummary } from '@shared/types'
 
-interface RepoData {
-  issues: RepoIssue[]
-  prs: RepoPR[]
-  runs: RepoRun[]
-  loading: boolean
+marked.setOptions({ gfm: true, breaks: true })
+
+function sanitizeHtml(html: string): string {
+  return html
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '')
+    .replace(/\bon\w+\s*=\s*[^\s>]*/gi, '')
+    .replace(/javascript:/gi, '')
 }
 
 interface RecapPanelProps {
   repos: string[]
-  repoData: Record<string, RepoData>
-  onNavigate: (nav: NavState) => void
+  /** Optional: restrict to a single repo (for repo-specific view) */
+  filterRepo?: string
 }
 
-const RECAP_ICONS: Record<RecapItem['type'], React.ReactNode> = {
-  REVIEW_PR: <GitPullRequestIcon size={16} className="gh-icon-open" />,
-  CHECK_COMMENT: <CommentIcon size={16} className="gh-icon-accent" />,
-  MERGE_PR: <GitMergeIcon size={16} className="gh-icon-merged" />,
-  CLOSE_ISSUE: <XCircleIcon size={16} className="gh-icon-closed" />,
-  FIX_CI: <AlertIcon size={16} className="gh-icon-danger" />,
-  TRIAGE_ISSUE: <TagIcon size={16} className="gh-icon-muted" />,
-}
+export function RecapPanel({ repos, filterRepo }: RecapPanelProps) {
+  const [summary, setSummary] = useState<RecapSummary | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [initialized, setInitialized] = useState(false)
 
-const RECAP_LABELS: Record<RecapItem['type'], { text: string; variant: 'default' | 'primary' | 'secondary' | 'accent' | 'success' | 'attention' | 'severe' | 'danger' | 'done' | 'sponsors' }> = {
-  REVIEW_PR: { text: 'Review PR', variant: 'accent' },
-  CHECK_COMMENT: { text: 'Check comment', variant: 'primary' },
-  MERGE_PR: { text: 'Merge PR', variant: 'success' },
-  CLOSE_ISSUE: { text: 'Close issue', variant: 'attention' },
-  FIX_CI: { text: 'Fix CI', variant: 'danger' },
-  TRIAGE_ISSUE: { text: 'Triage', variant: 'secondary' },
-}
+  // The repos to generate for
+  const targetRepos = filterRepo ? [filterRepo] : repos
+  const cacheKey = filterRepo ?? '__all__'
 
-/** Generate recap items from loaded data (heuristic, pre-AI) */
-function generateRecapItems(repos: string[], repoData: Record<string, RepoData>): RecapItem[] {
-  const items: RecapItem[] = []
-  let priority = 0
-
-  for (const repo of repos) {
-    const data = repoData[repo]
-    if (!data) continue
-    const shortName = repo.split('/').pop() || repo
-
-    // PRs with passing CI → REVIEW_PR
-    for (const pr of data.prs) {
-      const isRepoAssist = pr.labels?.some(l => l.name === 'repo-assist')
-      if (isRepoAssist && pr.isDraft) {
-        items.push({
-          id: `${repo}#pr${pr.number}`,
-          type: 'REVIEW_PR',
-          repo,
-          number: pr.number,
-          title: pr.title.replace('[Repo Assist] ', ''),
-          summary: `${shortName} — Repo Assist draft PR`,
-          priority: priority++,
-          done: false,
-        })
-      }
-    }
-
-    // Recent issues with repo-assist comments → CHECK_COMMENT
-    for (const issue of data.issues.slice(0, 10)) {
-      const isRepoAssist = issue.labels?.some(l => l.name === 'repo-assist')
-      if (isRepoAssist && !issue.title.includes('Monthly Activity')) {
-        items.push({
-          id: `${repo}#issue${issue.number}`,
-          type: 'CHECK_COMMENT',
-          repo,
-          number: issue.number,
-          title: issue.title.replace('[Repo Assist] ', ''),
-          summary: `${shortName} — bot activity on issue`,
-          priority: priority++,
-          done: false,
-        })
-      }
-    }
-  }
-
-  return items.slice(0, 10) // Show top 10
-}
-
-export function RecapPanel({ repos, repoData, onNavigate }: RecapPanelProps) {
-  const [items, setItems] = useState<RecapItem[]>([])
-  const [synthesizing, setSynthesizing] = useState(false)
-  const hasData = Object.keys(repoData).length > 0
-
+  // Reset state when switching between repos/global
   useEffect(() => {
-    if (hasData) {
-      // Start with heuristic items
-      setItems(generateRecapItems(repos, repoData))
+    setSummary(null)
+    setInitialized(false)
+    setLoading(false)
+  }, [cacheKey])
+
+  // Load cached recap, then auto-refresh if stale or missing
+  useEffect(() => {
+    let cancelled = false
+    async function init() {
+      const cached = await window.repoAssist.getRecapCache(cacheKey) as RecapSummary | null
+      if (!cancelled && cached?.markdown) {
+        setSummary(cached)
+        setInitialized(true)
+        return
+      }
+      // No cache — auto generate
+      if (!cancelled && targetRepos.length > 0) {
+        setInitialized(true)
+        setLoading(true)
+        try {
+          const fresh = await window.repoAssist.generateRecap(targetRepos)
+          if (!cancelled) setSummary(fresh)
+        } catch {
+          if (!cancelled) setSummary({ markdown: '', generatedAt: new Date().toISOString(), error: 'Failed to generate recap.' })
+        } finally {
+          if (!cancelled) setLoading(false)
+        }
+      } else {
+        setInitialized(true)
+      }
     }
-  }, [repos, repoData, hasData])
+    init()
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheKey])
 
-  const handleComplete = (id: string) => {
-    setItems(prev =>
-      prev.map(item => item.id === id ? { ...item, done: true } : item)
-    )
-    // Animate out after a short delay
-    setTimeout(() => {
-      setItems(prev => prev.filter(item => item.id !== id))
-    }, 400)
-  }
+  const handleRefresh = useCallback(async () => {
+    setLoading(true)
+    try {
+      const fresh = await window.repoAssist.generateRecap(targetRepos)
+      setSummary(fresh)
+    } catch {
+      setSummary({ markdown: '', generatedAt: new Date().toISOString(), error: 'Failed to generate recap.' })
+    } finally {
+      setLoading(false)
+    }
+  }, [targetRepos])
 
-  const handleRefresh = async () => {
-    setSynthesizing(true)
-    // For now, regenerate from heuristics
-    // TODO: Call AI synthesis here
-    await new Promise(r => setTimeout(r, 500))
-    setItems(generateRecapItems(repos, repoData))
-    setSynthesizing(false)
-  }
+  const handleClear = useCallback(async () => {
+    await window.repoAssist.clearRecap(cacheKey)
+    setSummary(null)
+  }, [cacheKey])
 
-  const handleItemClick = (item: RecapItem) => {
-    // Navigate to the item's detail view
-    const isPR = item.type === 'REVIEW_PR' || item.type === 'MERGE_PR'
-    onNavigate({
-      section: null,
-      repo: item.repo,
-      repoSection: isPR ? 'prs' : 'issues',
-      selectedItem: item.number,
-    })
-  }
-
-  const pendingItems = items.filter(item => !item.done)
-  const completedCount = items.length - pendingItems.length
+  const renderedHtml = useMemo(() => {
+    if (!summary?.markdown) return ''
+    try {
+      const raw = marked.parse(summary.markdown)
+      return typeof raw === 'string' ? sanitizeHtml(raw) : ''
+    } catch {
+      return sanitizeHtml(summary.markdown)
+    }
+  }, [summary?.markdown])
 
   return (
     <div>
       <div className="header-with-action">
         <div className="panel-header">
-          <h2>Morning Recap</h2>
+          <h2>
+            <span style={{ marginRight: 6, verticalAlign: 'text-bottom', display: 'inline-block' }}><SparkleIcon size={20} /></span>
+            Recap
+          </h2>
           <span className="subtitle">
-            {pendingItems.length} actions across {repos.length} repositories
-            {completedCount > 0 && ` · ${completedCount} completed`}
+            AI chronicle of recent activity
+            {filterRepo
+              ? <> in {filterRepo.split('/').pop()}</>
+              : <> across {repos.length} repo{repos.length !== 1 ? 's' : ''}</>
+            }
+            {summary?.generatedAt && !summary.error && (
+              <> · generated <time dateTime={summary.generatedAt}>{relativeTimeString(summary.generatedAt)}</time></>
+            )}
           </span>
         </div>
-        <Button
-          leadingVisual={synthesizing ? Spinner : SyncIcon}
-          onClick={handleRefresh}
-          disabled={synthesizing}
-          size="small"
-        >
-          {synthesizing ? 'Synthesizing...' : 'Refresh'}
-        </Button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <Button
+            leadingVisual={loading ? Spinner : SyncIcon}
+            onClick={handleRefresh}
+            disabled={loading}
+            size="small"
+          >
+            {loading ? 'Generating…' : 'Refresh'}
+          </Button>
+          {summary?.markdown && (
+            <Button
+              leadingVisual={TrashIcon}
+              onClick={handleClear}
+              size="small"
+              variant="danger"
+              disabled={loading}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
       </div>
 
-      {!hasData && (
+      {summary?.error && (
+        <Flash variant="danger" style={{ margin: '12px 0' }}>
+          {summary.error}
+        </Flash>
+      )}
+
+      {!initialized && !loading && (
         <div className="loading-center" style={{ height: 200 }}>
-          <div className="loading-spinner" />
-          <Text size="small" style={{ color: 'var(--fgColor-muted)' }}>Fetching repository data…</Text>
+          <Spinner size="medium" />
+          <Text size="small" style={{ color: 'var(--fgColor-muted)' }}>Loading…</Text>
         </div>
       )}
 
-      {hasData && (
-      <ActionList>
-        {pendingItems.map((item, idx) => (
-          <ActionList.Item key={item.id} onClick={() => handleItemClick(item)}>
-            <ActionList.LeadingVisual>
-              {RECAP_ICONS[item.type]}
-            </ActionList.LeadingVisual>
-            <div className="recap-item-row fade-in" style={{ animationDelay: `${idx * 60}ms` }}>
-              <div className="recap-item-meta">
-                <Label variant={RECAP_LABELS[item.type].variant}>
-                  {RECAP_LABELS[item.type].text}
-                </Label>
-                <Text size="small" style={{ color: 'var(--fgColor-muted)' }}>{item.repo.split('/').pop()}</Text>
-                <Text size="small" style={{ color: 'var(--fgColor-muted)' }}>#{item.number}</Text>
-              </div>
-              <Text weight="semibold">{item.title}</Text>
-            </div>
-            <ActionList.TrailingVisual>
-              <Button
-                size="small"
-                variant="invisible"
-                onClick={(e) => { e.stopPropagation(); handleComplete(item.id) }}
-                aria-label="Mark as done"
-              >
-                <CheckCircleIcon size={16} />
-              </Button>
-            </ActionList.TrailingVisual>
-          </ActionList.Item>
-        ))}
-      </ActionList>
+      {loading && !summary?.markdown && (
+        <div className="loading-center" style={{ height: 200 }}>
+          <Spinner size="medium" />
+          <Text size="small" style={{ color: 'var(--fgColor-muted)' }}>Scanning repos and generating AI summary…</Text>
+        </div>
       )}
 
-      {pendingItems.length === 0 && hasData && (
+      {renderedHtml && (
+        <div className="recap-body markdown-body fade-in" dangerouslySetInnerHTML={{ __html: renderedHtml }} />
+      )}
+
+      {initialized && !loading && !summary?.markdown && !summary?.error && (
         <div className="empty-state">
-          <CheckCircleIcon size={48} />
-          <p>All caught up! No pending actions.</p>
+          <SparkleIcon size={48} />
+          <p>No recap yet. Hit Refresh to generate an AI summary of automation activity.</p>
         </div>
       )}
     </div>
   )
+}
+
+function relativeTimeString(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
 }

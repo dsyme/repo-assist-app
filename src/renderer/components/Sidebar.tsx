@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Text, TreeView, CounterLabel, Button } from '@primer/react'
 import {
-  ChecklistIcon,
   RepoIcon,
   IssueOpenedIcon,
   GitPullRequestIcon,
@@ -11,6 +10,8 @@ import {
   PlusCircleIcon,
   XIcon,
   SearchIcon,
+  EyeIcon,
+  SparkleIcon,
 } from '@primer/octicons-react'
 import { NavState, RepoIssue, RepoPR, RepoRun } from '@shared/types'
 
@@ -79,9 +80,21 @@ export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount, onAd
           onSelect={() => onNavigate({ section: 'recap', repo: null, repoSection: null, selectedItem: null })}
         >
           <TreeView.LeadingVisual>
-            <ChecklistIcon />
+            <SparkleIcon />
           </TreeView.LeadingVisual>
           <Text weight={nav.section === 'recap' ? 'semibold' : 'normal'}>Recap</Text>
+        </TreeView.Item>
+
+        {/* Please Take a Look */}
+        <TreeView.Item
+          id="ptal"
+          current={nav.section === 'ptal'}
+          onSelect={() => onNavigate({ section: 'ptal', repo: null, repoSection: null, selectedItem: null })}
+        >
+          <TreeView.LeadingVisual>
+            <EyeIcon />
+          </TreeView.LeadingVisual>
+          <Text weight={nav.section === 'ptal' ? 'semibold' : 'normal'}>Please Take a Look</Text>
         </TreeView.Item>
 
         {/* Add Repository button */}
@@ -122,7 +135,31 @@ export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount, onAd
               </span>
 
               <TreeView.SubTree>
-                {/* Automations — first */}
+                {/* Repo Recap */}
+                <TreeView.Item
+                  id={`${repo}/repo-recap`}
+                  current={nav.repo === repo && nav.repoSection === 'repo-recap'}
+                  onSelect={() => onNavigate({ section: null, repo, repoSection: 'repo-recap', selectedItem: null })}
+                >
+                  <TreeView.LeadingVisual>
+                    <SparkleIcon />
+                  </TreeView.LeadingVisual>
+                  <Text>Recap</Text>
+                </TreeView.Item>
+
+                {/* Repo PTAL */}
+                <TreeView.Item
+                  id={`${repo}/repo-ptal`}
+                  current={nav.repo === repo && nav.repoSection === 'repo-ptal'}
+                  onSelect={() => onNavigate({ section: null, repo, repoSection: 'repo-ptal', selectedItem: null })}
+                >
+                  <TreeView.LeadingVisual>
+                    <EyeIcon />
+                  </TreeView.LeadingVisual>
+                  <Text>Please Take a Look</Text>
+                </TreeView.Item>
+
+                {/* Automations */}
                 <TreeView.Item
                   id={`${repo}/automations`}
                   current={nav.repo === repo && nav.repoSection === 'automations'}

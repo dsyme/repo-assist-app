@@ -4,6 +4,7 @@ import { ZapIcon } from '@primer/octicons-react'
 import { NavState, RepoIssue, RepoPR, RepoRun } from '@shared/types'
 import { Sidebar } from './components/Sidebar'
 import { RecapPanel } from './components/RecapPanel'
+import { PTALPanel } from './components/PTALPanel'
 import { IssueList } from './components/IssueList'
 import { PRList } from './components/PRList'
 import { RunList } from './components/RunList'
@@ -166,8 +167,10 @@ export default function App() {
 
         <div className="center-panel">
           {nav.section === 'recap' && (
-            <RecapPanel repos={repos} repoData={repoData} onNavigate={(target) => {
-              // Save current nav so we can return to recap when detail is closed
+            <RecapPanel repos={repos} />
+          )}
+          {nav.section === 'ptal' && (
+            <PTALPanel repos={repos} onNavigate={(target) => {
               returnNavRef.current = { ...nav }
               setNav(target)
             }} />
@@ -200,6 +203,15 @@ export default function App() {
           )}
           {nav.repo && nav.repoSection === 'automations' && (
             <AutomationsList repo={nav.repo} />
+          )}
+          {nav.repo && nav.repoSection === 'repo-recap' && (
+            <RecapPanel repos={repos} filterRepo={nav.repo} />
+          )}
+          {nav.repo && nav.repoSection === 'repo-ptal' && (
+            <PTALPanel repos={repos} filterRepo={nav.repo} onNavigate={(target) => {
+              returnNavRef.current = { ...nav }
+              setNav(target)
+            }} />
           )}
           {/* Detail view for selected issue or PR */}
           {nav.repo && nav.selectedItem && (nav.repoSection === 'issues' || nav.repoSection === 'prs') && (

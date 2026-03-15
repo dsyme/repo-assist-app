@@ -34,6 +34,13 @@ contextBridge.exposeInMainWorld('repoAssist', {
   // Local state
   getReadState: () => ipcRenderer.invoke('state:getReadState'),
   markRead: (key: string) => ipcRenderer.invoke('state:markRead', key),
-  getRecapCache: () => ipcRenderer.invoke('state:getRecapCache'),
-  setRecapCache: (data: unknown) => ipcRenderer.invoke('state:setRecapCache', data),
+  getRecapCache: (key: string) => ipcRenderer.invoke('state:getRecapCache', key),
+  generateRecap: (repos: string[]) => ipcRenderer.invoke('recap:generate', repos),
+  clearRecap: (key?: string) => ipcRenderer.invoke('recap:clear', key),
+
+  // PTAL
+  scanPTAL: (repos: string[]) => ipcRenderer.invoke('ptal:scan', repos),
+  getPTALCache: () => ipcRenderer.invoke('ptal:getCache'),
+  clearPTALItem: (key: string, activityId: string) => ipcRenderer.invoke('ptal:clear', key, activityId),
+  getPTALCleared: () => ipcRenderer.invoke('ptal:getCleared'),
 })

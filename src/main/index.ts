@@ -243,10 +243,44 @@ ipcMain.handle('state:markRead', async (_event, key: string) => {
   localState.markRead(key)
 })
 
-ipcMain.handle('state:getRecapCache', async () => {
-  return localState.getRecapCache()
+ipcMain.handle('state:getRecapCache', async (_event, key: string) => {
+  return localState.getRecapCache(key)
 })
 
-ipcMain.handle('state:setRecapCache', async (_event, data: unknown) => {
-  localState.setRecapCache(data)
+ipcMain.handle('recap:generate', async (_event, repos: string[]) => {
+  const clearedState = localState.getPTALCleared()
+  const cacheKey = repos.length === 1 ? repos[0] : '__all__'
+  try {
+    const result = await ghBridge.generateRecap(repos, clearedState)
+    const summary = { markdown: result.markdown, generatedAt: new Date().toISOString() }
+    localState.setRecapCache(cacheKey, summary)
+    return summary
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err)
+    return { markdown: '', generatedAt: new Date().toISOString(), error: msg }
+  }
+})
+
+ipcMain.handle('recap:clear', async (_event, key?: string) => {
+  localState.clearRecap(key)
+})
+
+// PTAL handlers
+ipcMain.handle('ptal:scan', async (_event, repos: string[]) => {
+  const clearedState = localState.getPTALCleared()
+  const items = await ghBridge.scanPTAL(repos, clearedState)
+  localState.setPTALCache(items)
+  return items
+})
+
+ipcMain.handle('ptal:getCache', async () => {
+  return localState.getPTALCache()
+})
+
+ipcMain.handle('ptal:clear', async (_event, key: string, activityId: string) => {
+  localState.clearPTALItem(key, activityId)
+})
+
+ipcMain.handle('ptal:getCleared', async () => {
+  return localState.getPTALCleared()
 })
