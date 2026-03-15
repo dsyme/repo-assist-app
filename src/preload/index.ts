@@ -1,0 +1,30 @@
+import { contextBridge, ipcRenderer } from 'electron'
+
+contextBridge.exposeInMainWorld('repoAssist', {
+  // GitHub data
+  getRepos: () => ipcRenderer.invoke('gh:getRepos'),
+  getIssues: (repo: string) => ipcRenderer.invoke('gh:getIssues', repo),
+  getPRs: (repo: string) => ipcRenderer.invoke('gh:getPRs', repo),
+  getRuns: (repo: string) => ipcRenderer.invoke('gh:getRuns', repo),
+  getWorkflows: (repo: string) => ipcRenderer.invoke('gh:getWorkflows', repo),
+  getIssueDetail: (repo: string, number: number) => ipcRenderer.invoke('gh:getIssueDetail', repo, number),
+  getPRDetail: (repo: string, number: number) => ipcRenderer.invoke('gh:getPRDetail', repo, number),
+  getPRDiff: (repo: string, number: number) => ipcRenderer.invoke('gh:getPRDiff', repo, number),
+  getMonthlyActivity: (repo: string) => ipcRenderer.invoke('gh:getMonthlyActivity', repo),
+  getEvents: (repo: string) => ipcRenderer.invoke('gh:getEvents', repo),
+  getCommandLog: () => ipcRenderer.invoke('gh:getCommandLog'),
+  exec: (command: string) => ipcRenderer.invoke('gh:exec', command),
+
+  // Write operations
+  getWriteMode: () => ipcRenderer.invoke('gh:writeMode'),
+  setWriteMode: (enabled: boolean) => ipcRenderer.invoke('gh:setWriteMode', enabled),
+  addComment: (repo: string, number: number, body: string) => ipcRenderer.invoke('gh:addComment', repo, number, body),
+  mergePR: (repo: string, number: number) => ipcRenderer.invoke('gh:mergePR', repo, number),
+  openExternal: (url: string) => ipcRenderer.invoke('app:openExternal', url),
+
+  // Local state
+  getReadState: () => ipcRenderer.invoke('state:getReadState'),
+  markRead: (key: string) => ipcRenderer.invoke('state:markRead', key),
+  getRecapCache: () => ipcRenderer.invoke('state:getRecapCache'),
+  setRecapCache: (data: unknown) => ipcRenderer.invoke('state:setRecapCache', data),
+})
