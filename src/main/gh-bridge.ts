@@ -22,14 +22,6 @@ interface GhExecResult {
   durationMs: number
 }
 
-// Default repo list — will be overridden by .repo-assist config
-const DEFAULT_REPOS = [
-  'fslaborg/Deedle',
-  'fsprojects/FSharp.Formatting',
-  'fsprojects/FSharp.Data',
-  'fsprojects/FSharp.Control.TaskSeq'
-]
-
 export class GhBridge {
   private commandLog: CommandLogEntry[] = []
   private maxLogEntries = 500
@@ -95,10 +87,12 @@ export class GhBridge {
   }
 
   async getConfiguredRepos(): Promise<string[]> {
-    // Try to load from user's .repo-assist GitHub repo
+    // Fetch repo list from user's .repo-assist-app repo
     try {
+      const username = await this.getUsername()
+      if (username === 'unknown') return []
       const result = await this.exec(
-        'api repos/{owner}/.repo-assist/contents/config.json --jq .content'
+        `api repos/${username}/.repo-assist-app/contents/config.json --jq .content`
       )
       if (result.exitCode === 0 && result.stdout.trim()) {
         const decoded = Buffer.from(result.stdout.trim(), 'base64').toString('utf-8')
@@ -108,9 +102,47 @@ export class GhBridge {
         }
       }
     } catch {
-      // Fall through to defaults
+      // Fall through
     }
-    return DEFAULT_REPOS
+    return []
+  }
+
+  /** Check if .repo-assist-app repo exists for the authenticated user */
+  async checkRepoAssistAppExists(): Promise<boolean> {
+    const username = await this.getUsername()
+    if (username === 'unknown') return false
+    const result = await this.exec(`api repos/${username}/.repo-assist-app --jq .full_name`)
+    return result.exitCode === 0 && result.stdout.trim().length > 0
+  }
+
+  /** Create a private .repo-assist-app repo for the authenticated user */
+  async createRepoAssistApp(): Promise<boolean> {
+    const result = await this.exec(
+      `api user/repos -X POST -f name=.repo-assist-app -f private=true -f description="Repo Assist App configuration"`,
+      'write'
+    )
+    return result.exitCode === 0
+  }
+
+  /** Save repo list to the .repo-assist-app remote repo */
+  async saveRemoteRepoList(repos: string[]): Promise<boolean> {
+    const username = await this.getUsername()
+    if (username === 'unknown') return false
+    const content = JSON.stringify({ repositories: repos }, null, 2)
+    const encoded = Buffer.from(content).toString('base64')
+
+    // Check if file exists to get its SHA (needed for updates)
+    const existing = await this.exec(
+      `api repos/${username}/.repo-assist-app/contents/config.json --jq .sha`
+    )
+    const sha = existing.exitCode === 0 ? existing.stdout.trim() : ''
+
+    const shaFlag = sha ? ` -f sha=${sha}` : ''
+    const result = await this.exec(
+      `api repos/${username}/.repo-assist-app/contents/config.json -X PUT -f message="Update repo list" -f content=${encoded}${shaFlag}`,
+      'write'
+    )
+    return result.exitCode === 0
   }
 
   async getIssues(repo: string): Promise<unknown[]> {

@@ -3,6 +3,8 @@ import { contextBridge, ipcRenderer } from 'electron'
 contextBridge.exposeInMainWorld('repoAssist', {
   // GitHub data
   getRepos: () => ipcRenderer.invoke('gh:getRepos'),
+  getRepoStorageStatus: () => ipcRenderer.invoke('app:getRepoStorageStatus'),
+  setRepoStoragePreference: (pref: 'remote' | 'local') => ipcRenderer.invoke('app:setRepoStoragePreference', pref),
   getIssues: (repo: string) => ipcRenderer.invoke('gh:getIssues', repo),
   getPRs: (repo: string) => ipcRenderer.invoke('gh:getPRs', repo),
   getRuns: (repo: string) => ipcRenderer.invoke('gh:getRuns', repo),

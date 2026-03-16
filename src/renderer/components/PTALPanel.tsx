@@ -107,16 +107,14 @@ export function PTALPanel({ repos, items, loading, initialized, filterRepo, onCl
             }
           </span>
         </div>
-        {!filterRepo && (
-          <Button
-            leadingVisual={loading ? Spinner : SyncIcon}
-            onClick={onRefresh}
-            disabled={loading}
-            size="small"
-          >
-            {loading ? 'Scanning…' : 'Refresh'}
-          </Button>
-        )}
+        <Button
+          leadingVisual={loading ? Spinner : SyncIcon}
+          onClick={onRefresh}
+          disabled={loading}
+          size="small"
+        >
+          {loading ? 'Scanning…' : 'Refresh'}
+        </Button>
       </div>
 
       {!initialized && (

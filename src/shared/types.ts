@@ -119,6 +119,13 @@ export interface RecapSummary {
   error?: string
 }
 
+export interface RepoStorageStatus {
+  /** User's stored preference, null if never asked */
+  preference: 'remote' | 'local' | null
+  /** Whether .repo-assist-app repo exists on GitHub for the user */
+  remoteExists: boolean
+}
+
 export type NavSection = 'recap' | 'ptal' | 'commands' | 'settings'
 export type RepoSection = 'issues' | 'prs' | 'automations' | 'repo-recap' | 'repo-ptal'
 
@@ -138,6 +145,8 @@ export interface NavState {
 
 export interface RepoAssistAPI {
   getRepos: () => Promise<string[]>
+  getRepoStorageStatus: () => Promise<RepoStorageStatus>
+  setRepoStoragePreference: (pref: 'remote' | 'local') => Promise<string[]>
   getIssues: (repo: string) => Promise<RepoIssue[]>
   getPRs: (repo: string) => Promise<RepoPR[]>
   getRuns: (repo: string) => Promise<RepoRun[]>

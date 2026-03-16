@@ -151,4 +151,39 @@ export class LocalState {
   setPTALCache(items: unknown[]): void {
     writeJson(PTAL_CACHE_FILE, { items, cachedAt: new Date().toISOString() })
   }
+
+  // Repo storage preference: 'remote' | 'local' | null (never asked)
+  getRepoStoragePreference(): 'remote' | 'local' | null {
+    const settings = readJson(SETTINGS_FILE)
+    const pref = settings.repoStoragePreference
+    if (pref === 'remote' || pref === 'local') return pref
+    return null
+  }
+
+  setRepoStoragePreference(pref: 'remote' | 'local'): void {
+    const settings = readJson(SETTINGS_FILE)
+    settings.repoStoragePreference = pref
+    writeJson(SETTINGS_FILE, settings)
+  }
+
+  /** Seed the local repo list with defaults if it's empty and has never been customized */
+  seedDefaultReposIfEmpty(): void {
+    const settings = readJson(SETTINGS_FILE)
+    if (!Array.isArray(settings.customRepos) || settings.customRepos.length === 0) {
+      settings.customRepos = [
+        'fslaborg/Deedle',
+        'fsprojects/FSharp.Formatting',
+        'fsprojects/FSharp.Data',
+        'fsprojects/FSharp.Control.TaskSeq'
+      ]
+      writeJson(SETTINGS_FILE, settings)
+    }
+  }
+
+  /** Replace the full local repo list (used when syncing from remote) */
+  setLocalRepos(repos: string[]): void {
+    const settings = readJson(SETTINGS_FILE)
+    settings.customRepos = repos
+    writeJson(SETTINGS_FILE, settings)
+  }
 }

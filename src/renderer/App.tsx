@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { Flash, ToggleSwitch, Text } from '@primer/react'
+import { Flash, ToggleSwitch, Text, Button } from '@primer/react'
 import { ZapIcon } from '@primer/octicons-react'
-import { NavState, RepoIssue, RepoPR, PTALItem } from '@shared/types'
+import { NavState, RepoIssue, RepoPR, PTALItem, RepoStorageStatus } from '@shared/types'
 import { Sidebar } from './components/Sidebar'
 import { RecapPanel } from './components/RecapPanel'
 import { PTALPanel } from './components/PTALPanel'
@@ -10,6 +10,7 @@ import { PRList } from './components/PRList'
 import { CommandLog } from './components/CommandLog'
 import { AutomationsList } from './components/AutomationsList'
 import { DetailPanel } from './components/DetailPanel'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import './styles/app.css'
 
 interface RepoData {
@@ -31,68 +32,24 @@ export default function App() {
   const ptalClearedKeysRef = useRef<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [storagePrompt, setStoragePrompt] = useState(false)
+  const [storageLoading, setStorageLoading] = useState(false)
   // Track the nav state to return to when closing a detail view
   const returnNavRef = useRef<NavState | null>(null)
 
   useEffect(() => {
     async function init() {
       try {
-        const [repoList, readSt, wm] = await Promise.all([
-          window.repoAssist.getRepos(),
-          window.repoAssist.getReadState(),
-          window.repoAssist.getWriteMode(),
-        ])
-        setRepos(repoList)
-        setReadState(readSt)
-        setWriteMode(wm)
-        setLoading(false)
-
-        const dataEntries = await Promise.all(
-          repoList.map(async (repo) => {
-            try {
-              const [issues, prs] = await Promise.all([
-                window.repoAssist.getIssues(repo),
-                window.repoAssist.getPRs(repo),
-              ])
-              return [repo, { issues, prs, loading: false }] as const
-            } catch {
-              return [repo, { issues: [], prs: [], loading: false }] as const
-            }
-          })
-        )
-        setRepoData(Object.fromEntries(dataEntries))
-
-        // Load PTAL cache for sidebar counts, then refresh in background
-        window.repoAssist.getPTALCache().then((cached: PTALItem[]) => {
-          if (cached.length > 0) {
-            setPtalItems(cached)
-            setPtalInitialized(true)
-          }
-        }).catch(() => {})
-        setPtalLoading(true)
-        window.repoAssist.scanPTAL(repoList).then((fresh: PTALItem[]) => {
-          setPtalItems(fresh.filter(i => !ptalClearedKeysRef.current.has(i.key)))
-          setPtalInitialized(true)
-          setPtalLoading(false)
-        }).catch(() => { setPtalLoading(false) })
-
-        // Kick off background recap generation so results are cached when the user opens panels.
-        // Generate global recap if not cached, then per-repo recaps sequentially in the background.
-        const generateInBackground = async () => {
-          try {
-            const cachedGlobal = await window.repoAssist.getRecapCache('__all__')
-            if (!cachedGlobal) {
-              await window.repoAssist.generateRecap(repoList)
-            }
-            for (const repo of repoList) {
-              const cachedRepo = await window.repoAssist.getRecapCache(repo)
-              if (!cachedRepo) {
-                await window.repoAssist.generateRecap([repo])
-              }
-            }
-          } catch { /* background — ignore errors */ }
+        // Check repo storage status first
+        const status: RepoStorageStatus = await window.repoAssist.getRepoStorageStatus()
+        if (status.preference === null && !status.remoteExists) {
+          // Need to ask the user — show prompt
+          setStoragePrompt(true)
+          setLoading(false)
+          return
         }
-        generateInBackground()
+
+        await loadApp()
       } catch (err) {
         setError(`Failed to initialize: ${err}`)
         setLoading(false)
@@ -100,6 +57,83 @@ export default function App() {
     }
     init()
   }, [])
+
+  const loadApp = useCallback(async () => {
+    try {
+      const [repoList, readSt, wm] = await Promise.all([
+        window.repoAssist.getRepos(),
+        window.repoAssist.getReadState(),
+        window.repoAssist.getWriteMode(),
+      ])
+      setRepos(repoList)
+      setReadState(readSt)
+      setWriteMode(wm)
+      setLoading(false)
+
+      const dataEntries = await Promise.all(
+        repoList.map(async (repo) => {
+          try {
+            const [issues, prs] = await Promise.all([
+              window.repoAssist.getIssues(repo),
+              window.repoAssist.getPRs(repo),
+            ])
+            return [repo, { issues, prs, loading: false }] as const
+          } catch {
+            return [repo, { issues: [], prs: [], loading: false }] as const
+          }
+        })
+      )
+      setRepoData(Object.fromEntries(dataEntries))
+
+      // Load PTAL cache for sidebar counts, then refresh in background
+      window.repoAssist.getPTALCache().then((cached: PTALItem[]) => {
+        if (cached.length > 0) {
+          setPtalItems(cached)
+          setPtalInitialized(true)
+        }
+      }).catch(() => {})
+      setPtalLoading(true)
+      window.repoAssist.scanPTAL(repoList).then((fresh: PTALItem[]) => {
+        setPtalItems(fresh.filter(i => !ptalClearedKeysRef.current.has(i.key)))
+        setPtalInitialized(true)
+        setPtalLoading(false)
+      }).catch(() => { setPtalLoading(false) })
+
+      // Kick off background recap generation so results are cached when the user opens panels.
+      const generateInBackground = async () => {
+        try {
+          const cachedGlobal = await window.repoAssist.getRecapCache('__all__')
+          if (!cachedGlobal) {
+            await window.repoAssist.generateRecap(repoList)
+          }
+          for (const repo of repoList) {
+            const cachedRepo = await window.repoAssist.getRecapCache(repo)
+            if (!cachedRepo) {
+              await window.repoAssist.generateRecap([repo])
+            }
+          }
+        } catch { /* background — ignore errors */ }
+      }
+      generateInBackground()
+    } catch (err) {
+      setError(`Failed to initialize: ${err}`)
+      setLoading(false)
+    }
+  }, [])
+
+  const handleStorageChoice = useCallback(async (choice: 'remote' | 'local') => {
+    setStorageLoading(true)
+    try {
+      await window.repoAssist.setRepoStoragePreference(choice)
+      setStoragePrompt(false)
+      setLoading(true)
+      await loadApp()
+    } catch (err) {
+      setError(`Failed to set up repo storage: ${err}`)
+    } finally {
+      setStorageLoading(false)
+    }
+  }, [loadApp])
 
   const handleWriteModeToggle = useCallback(async () => {
     const newValue = !writeMode
@@ -175,7 +209,14 @@ export default function App() {
     }
   }, [repos, refreshPTAL])
 
-  /** Explicitly re-fetch issues & PRs for a repo (user-triggered refresh) */
+  /** Optimistically remove a PTAL item by repo+number (e.g. after merge/close) */
+  const removePTALForPR = useCallback((repo: string, prNumber: number) => {
+    const key = `${repo}#${prNumber}`
+    ptalClearedKeysRef.current.add(key)
+    setPtalItems(prev => prev.filter(i => i.key !== key))
+  }, [])
+
+  /** Explicitly re-fetch issues, PRs, and PTAL for a repo (user-triggered refresh) */
   const handleRefreshRepo = useCallback(async (repo: string) => {
     setRepoData(prev => ({ ...prev, [repo]: { ...prev[repo], loading: true } }))
     try {
@@ -187,7 +228,9 @@ export default function App() {
     } catch {
       setRepoData(prev => ({ ...prev, [repo]: { ...prev[repo], loading: false } }))
     }
-  }, [])
+    // Also refresh PTAL in background
+    refreshPTAL()
+  }, [refreshPTAL])
 
   // Global click handler: intercept GitHub issue/PR links
   // Normal click = navigate internally, Shift+click = open in browser
@@ -232,6 +275,40 @@ export default function App() {
       <div className="loading-center">
         <div className="loading-spinner" />
         <Text size="medium" style={{ color: 'var(--fgColor-muted)' }}>Connecting to repositories…</Text>
+      </div>
+    )
+  }
+
+  if (storagePrompt) {
+    return (
+      <div className="loading-center">
+        <div style={{ maxWidth: 480, textAlign: 'center' }}>
+          <ZapIcon size={32} />
+          <h2 style={{ marginTop: 12 }}>Repo List Storage</h2>
+          <p style={{ color: 'var(--fgColor-muted)', lineHeight: 1.5 }}>
+            Would you like to store your repository list in a private <strong>.repo-assist-app</strong> repo
+            on your GitHub account? This keeps your list synced across machines.
+          </p>
+          <p style={{ color: 'var(--fgColor-muted)', fontSize: '0.85em' }}>
+            If you choose no, the list will be stored locally on this machine only.
+          </p>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 20 }}>
+            <Button
+              variant="primary"
+              disabled={storageLoading}
+              onClick={() => handleStorageChoice('remote')}
+            >
+              {storageLoading ? 'Creating…' : 'Yes, create repo'}
+            </Button>
+            <Button
+              disabled={storageLoading}
+              onClick={() => handleStorageChoice('local')}
+            >
+              No, store locally
+            </Button>
+          </div>
+          {error && <Flash variant="danger" style={{ marginTop: 16 }}>{error}</Flash>}
+        </div>
       </div>
     )
   }
@@ -314,6 +391,7 @@ export default function App() {
               isUnread={isUnread}
               onMarkRead={handleMarkRead}
               onSelectItem={(num: number) => setNav(prev => ({ ...prev, selectedItem: num }))}
+              onRefresh={() => handleRefreshRepo(nav.repo!)}
             />
           )}
           {nav.repo && nav.repoSection === 'prs' && repoData[nav.repo] && !nav.selectedItem && (
@@ -322,6 +400,8 @@ export default function App() {
               prs={repoData[nav.repo].prs}
               writeMode={writeMode}
               onSelectItem={(num: number) => setNav(prev => ({ ...prev, selectedItem: num }))}
+              onRefresh={() => handleRefreshRepo(nav.repo!)}
+              onPRStateChange={(prNumber: number) => removePTALForPR(nav.repo!, prNumber)}
             />
           )}
           {nav.repo && nav.repoSection === 'automations' && (
@@ -347,20 +427,22 @@ export default function App() {
           )}
           {/* Detail view for selected issue or PR */}
           {nav.repo && nav.selectedItem && (nav.repoSection === 'issues' || nav.repoSection === 'prs') && (
-            <DetailPanel
-              type={nav.repoSection === 'issues' ? 'issue' : 'pr'}
-              repo={nav.repo}
-              number={nav.selectedItem}
-              writeMode={writeMode}
-              onClose={() => {
-                if (returnNavRef.current) {
-                  setNav(returnNavRef.current)
-                  returnNavRef.current = null
-                } else {
-                  setNav(prev => ({ ...prev, selectedItem: null }))
-                }
-              }}
-            />
+            <ErrorBoundary key={`${nav.repo}#${nav.selectedItem}`}>
+              <DetailPanel
+                type={nav.repoSection === 'issues' ? 'issue' : 'pr'}
+                repo={nav.repo}
+                number={nav.selectedItem}
+                writeMode={writeMode}
+                onClose={() => {
+                  if (returnNavRef.current) {
+                    setNav(returnNavRef.current)
+                    returnNavRef.current = null
+                  } else {
+                    setNav(prev => ({ ...prev, selectedItem: null }))
+                  }
+                }}
+              />
+            </ErrorBoundary>
           )}
         </div>
       </div>

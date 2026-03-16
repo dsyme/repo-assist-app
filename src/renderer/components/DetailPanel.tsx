@@ -25,6 +25,12 @@ import {
 import { marked } from 'marked'
 import { IssueDetail, PRDetail, PRCheck, PRTimelineEvent, PRBranchStatus } from '@shared/types'
 
+/** Wrapper around RelativeTime that guards against invalid dates */
+function SafeRelativeTime({ date, ...props }: { date: Date; style?: React.CSSProperties }) {
+  if (!date || isNaN(date.getTime())) return null
+  return <RelativeTime date={date} {...props} />
+}
+
 // Configure marked for GitHub-flavored markdown
 marked.setOptions({
   gfm: true,
@@ -148,6 +154,7 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
   const [closing, setClosing] = useState(false)
   const [branchStatus, setBranchStatus] = useState<PRBranchStatus | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // Close on Escape key
   useEffect(() => {
@@ -194,7 +201,7 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
       }
     }
     load()
-  }, [type, repo, number])
+  }, [type, repo, number, refreshKey])
 
   // Poll CI checks while PR is displayed and checks are pending
   useEffect(() => {
@@ -368,9 +375,11 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
       <div className="detail-panel fade-in">
         <div className="detail-header">
           <span />
-          <Button size="small" variant="invisible" onClick={onClose} aria-label="Close detail">
-            <XIcon size={16} />
-          </Button>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <Button size="small" variant="invisible" onClick={onClose} aria-label="Close detail">
+              <XIcon size={16} />
+            </Button>
+          </div>
         </div>
         <div className="loading-center" style={{ height: 200 }}>
           <Spinner size="medium" />
@@ -384,9 +393,14 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
       <div className="detail-panel fade-in">
         <div className="detail-header">
           <span />
-          <Button size="small" variant="invisible" onClick={onClose} aria-label="Close detail">
-            <XIcon size={16} />
-          </Button>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <Button size="small" variant="invisible" onClick={() => setRefreshKey(k => k + 1)} aria-label="Refresh">
+              <SyncIcon size={16} />
+            </Button>
+            <Button size="small" variant="invisible" onClick={onClose} aria-label="Close detail">
+              <XIcon size={16} />
+            </Button>
+          </div>
         </div>
         <Flash variant="danger">{error}</Flash>
       </div>
@@ -420,7 +434,7 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
                   openExternal={window.repoAssist.openExternal}
                 />
               </Text>
-              <RelativeTime date={new Date(c.createdAt)} />
+              <SafeRelativeTime date={new Date(c.createdAt)} />
             </div>
             <TruncatedMarkdown content={c.body || ''} repo={repo} maxLen={4000} />
           </div>
@@ -459,16 +473,21 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
                     openExternal={window.repoAssist.openExternal}
                   />
                 </Text>
-                <RelativeTime date={new Date(issueDetail.createdAt)} />
+                <SafeRelativeTime date={new Date(issueDetail.createdAt)} />
                 {issueDetail.labels?.map(l => (
                   <Label key={l.name} size="small">{l.name}</Label>
                 ))}
               </div>
             </div>
           </div>
-          <Button size="small" variant="invisible" onClick={onClose} aria-label="Close detail">
-            <XIcon size={16} />
-          </Button>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <Button size="small" variant="invisible" onClick={() => setRefreshKey(k => k + 1)} aria-label="Refresh">
+              <SyncIcon size={16} />
+            </Button>
+            <Button size="small" variant="invisible" onClick={onClose} aria-label="Close detail">
+              <XIcon size={16} />
+            </Button>
+          </div>
         </div>
 
         {/* Body — rendered as markdown */}
@@ -558,7 +577,7 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
                     <Label size="small" variant="accent">⚡ {prAuthorIdentity.name}</Label>
                   </a>
                 )}
-                <RelativeTime date={new Date(prDetail.createdAt)} />
+                <SafeRelativeTime date={new Date(prDetail.createdAt)} />
                 {prDetail.additions != null && (
                   <span className="diff-stat">
                     <span className="diff-add">+{prDetail.additions}</span>
@@ -568,9 +587,14 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
               </div>
             </div>
           </div>
-          <Button size="small" variant="invisible" onClick={onClose} aria-label="Close detail">
-            <XIcon size={16} />
-          </Button>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <Button size="small" variant="invisible" onClick={() => setRefreshKey(k => k + 1)} aria-label="Refresh">
+              <SyncIcon size={16} />
+            </Button>
+            <Button size="small" variant="invisible" onClick={onClose} aria-label="Close detail">
+              <XIcon size={16} />
+            </Button>
+          </div>
         </div>
 
         {/* Body — rendered as markdown */}
@@ -635,7 +659,7 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
                   <Label size="small" variant={r.state === 'APPROVED' ? 'success' : r.state === 'CHANGES_REQUESTED' ? 'danger' : 'secondary'}>
                     {r.state}
                   </Label>
-                  <RelativeTime date={new Date(r.createdAt)} />
+                  <SafeRelativeTime date={new Date(r.createdAt)} />
                 </div>
                 {r.body && <TruncatedMarkdown content={r.body} repo={repo} maxLen={4000} />}
               </div>
@@ -868,7 +892,7 @@ function TimelineEventRow({ event }: { event: PRTimelineEvent }) {
       {icon}
       <Text size="small" style={{ flex: 1 }}>{label}</Text>
       {detail && <Text size="small" style={{ color: 'var(--fgColor-muted)', fontFamily: 'var(--fontFamily-mono)' }}>{detail}</Text>}
-      {created_at && <RelativeTime date={new Date(created_at)} style={{ fontSize: 12 }} />}
+      {created_at && <SafeRelativeTime date={new Date(created_at)} style={{ fontSize: 12 }} />}
     </div>
   )
 }

@@ -14,6 +14,7 @@ import {
   IssueOpenedIcon,
   ZapIcon,
   MarkGithubIcon,
+  SyncIcon,
 } from '@primer/octicons-react'
 import { marked } from 'marked'
 import { RepoWorkflow, RepoRun } from '@shared/types'
@@ -133,6 +134,7 @@ export function AutomationsList({ repo }: AutomationsListProps) {
   const [selectedWorkflow, setSelectedWorkflow] = useState<EnrichedWorkflow | null>(null)
   const [sourceContent, setSourceContent] = useState<string | null>(null)
   const [sourceLoading, setSourceLoading] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   // Load workflows
   useEffect(() => {
@@ -171,7 +173,7 @@ export function AutomationsList({ repo }: AutomationsListProps) {
       }
     }
     load()
-  }, [repo])
+  }, [repo, refreshKey])
 
   // Lazy-load runs after workflows
   useEffect(() => {
@@ -258,13 +260,23 @@ export function AutomationsList({ repo }: AutomationsListProps) {
   // List view
   return (
     <div>
-      <div className="panel-header">
-        <h2>Automations — {repo.split('/').pop()}</h2>
-        <span className="subtitle">
-          {workflows.length} workflows{loading ? ' (loading…)' : ''}
-          {!loading && runsLoading && ' · loading runs…'}
-          {!loading && !runsLoading && runs.length > 0 && ` \u00b7 ${runs.length} runs in last ${runsTimeSpan(runs)}`}
-        </span>
+      <div className="header-with-action">
+        <div className="panel-header">
+          <h2>Automations — {repo.split('/').pop()}</h2>
+          <span className="subtitle">
+            {workflows.length} workflows{loading ? ' (loading…)' : ''}
+            {!loading && runsLoading && ' · loading runs…'}
+            {!loading && !runsLoading && runs.length > 0 && ` · ${runs.length} runs in last ${runsTimeSpan(runs)}`}
+          </span>
+        </div>
+        <Button
+          leadingVisual={loading ? Spinner : SyncIcon}
+          onClick={() => setRefreshKey(k => k + 1)}
+          disabled={loading}
+          size="small"
+        >
+          {loading ? 'Loading…' : 'Refresh'}
+        </Button>
       </div>
 
       {loading && (

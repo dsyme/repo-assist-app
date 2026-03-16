@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useRef } from 'react'
-import { Text, ActionList, Label, RelativeTime, Spinner } from '@primer/react'
+import { Text, ActionList, Label, RelativeTime, Spinner, Button } from '@primer/react'
 import {
   GitPullRequestIcon,
   GitPullRequestDraftIcon,
@@ -21,9 +21,11 @@ interface PRListProps {
   prs: RepoPR[]
   writeMode: boolean
   onSelectItem: (number: number) => void
+  onRefresh: () => void
+  onPRStateChange?: (prNumber: number) => void
 }
 
-export function PRList({ repo, prs, writeMode, onSelectItem }: PRListProps) {
+export function PRList({ repo, prs, writeMode, onSelectItem, onRefresh, onPRStateChange }: PRListProps) {
   const [markingReady, setMarkingReady] = useState<number | null>(null)
   const [updatingBranch, setUpdatingBranch] = useState<number | null>(null)
   const [approvingPR, setApprovingPR] = useState<number | null>(null)
@@ -49,8 +51,10 @@ export function PRList({ repo, prs, writeMode, onSelectItem }: PRListProps) {
     }
   }, [repo, prs])
 
-  // Apply local overrides to props
-  const effectivePRs = prs.map(pr => localOverrides[pr.number] ? { ...pr, ...localOverrides[pr.number] } : pr)
+  // Apply local overrides to props, filtering out closed/merged PRs
+  const effectivePRs = prs
+    .map(pr => localOverrides[pr.number] ? { ...pr, ...localOverrides[pr.number] } : pr)
+    .filter(pr => pr.state !== 'MERGED' && pr.state !== 'CLOSED')
   const sorted = [...effectivePRs].sort((a, b) =>
     new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
   )
@@ -109,6 +113,7 @@ export function PRList({ repo, prs, writeMode, onSelectItem }: PRListProps) {
     try {
       await window.repoAssist.mergePR(repo, prNumber)
       setLocalOverrides(prev => ({ ...prev, [prNumber]: { state: 'MERGED' } }))
+      onPRStateChange?.(prNumber)
     } finally {
       setMergingPR(null)
     }
@@ -119,7 +124,8 @@ export function PRList({ repo, prs, writeMode, onSelectItem }: PRListProps) {
     setClosingPR(prNumber)
     try {
       await window.repoAssist.exec(`pr close ${prNumber} -R ${repo}`)
-      setLocalOverrides(prev => ({ ...prev, [prNumber]: { state: 'CLOSED' } }))
+      setLocalOverrides(prev => ({ ...prev, [prNumber]: { state: 'CLOSED', isDraft: false } }))
+      onPRStateChange?.(prNumber)
     } finally {
       setClosingPR(null)
     }
@@ -130,12 +136,21 @@ export function PRList({ repo, prs, writeMode, onSelectItem }: PRListProps) {
 
   return (
     <div>
-      <div className="panel-header">
-        <h2>Pull Requests — {repo.split('/').pop()}</h2>
-        <span className="subtitle">
-          {prs.length} open PRs
-          {!writeMode && ' · Read-only mode'}
-        </span>
+      <div className="header-with-action">
+        <div className="panel-header">
+          <h2>Pull Requests — {repo.split('/').pop()}</h2>
+          <span className="subtitle">
+            {effectivePRs.length} open PRs
+            {!writeMode && ' · Read-only mode'}
+          </span>
+        </div>
+        <Button
+          leadingVisual={SyncIcon}
+          onClick={onRefresh}
+          size="small"
+        >
+          Refresh
+        </Button>
       </div>
 
       <ActionList>
@@ -148,12 +163,12 @@ export function PRList({ repo, prs, writeMode, onSelectItem }: PRListProps) {
           return (
             <ActionList.Item key={pr.number} onSelect={() => onSelectItem(pr.number)}>
               <ActionList.LeadingVisual>
-                {pr.isDraft
-                  ? <GitPullRequestDraftIcon size={16} className="gh-icon-draft" />
-                  : pr.state === 'MERGED'
-                    ? <GitMergeIcon size={16} className="gh-icon-merged" />
-                    : pr.state === 'CLOSED'
-                      ? <GitPullRequestClosedIcon size={16} className="gh-icon-closed" />
+                {pr.state === 'MERGED'
+                  ? <GitMergeIcon size={16} className="gh-icon-merged" />
+                  : pr.state === 'CLOSED'
+                    ? <GitPullRequestClosedIcon size={16} className="gh-icon-closed" />
+                    : pr.isDraft
+                      ? <GitPullRequestDraftIcon size={16} className="gh-icon-draft" />
                       : <GitPullRequestIcon size={16} className="gh-icon-open" />
                 }
               </ActionList.LeadingVisual>
@@ -247,7 +262,7 @@ export function PRList({ repo, prs, writeMode, onSelectItem }: PRListProps) {
         })}
       </ActionList>
 
-      {prs.length === 0 && (
+      {effectivePRs.length === 0 && (
         <div className="empty-state">
           <Text>No open pull requests</Text>
         </div>

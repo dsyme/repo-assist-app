@@ -4,6 +4,27 @@ import { execSync } from 'child_process'
 import { GhBridge } from './gh-bridge'
 import { LocalState } from './local-state'
 
+// Logging helper — writes to stdout so it shows up in the terminal for `npm run dev`
+function log(level: 'info' | 'warn' | 'error', ...args: unknown[]): void {
+  const ts = new Date().toISOString().substring(11, 23)
+  const prefix = `[${ts}] [${level.toUpperCase()}]`
+  if (level === 'error') {
+    console.error(prefix, ...args)
+  } else if (level === 'warn') {
+    console.warn(prefix, ...args)
+  } else {
+    console.log(prefix, ...args)
+  }
+}
+
+// Catch uncaught exceptions and unhandled rejections in main process
+process.on('uncaughtException', (err) => {
+  log('error', 'Uncaught exception:', err.message, '\n', err.stack)
+})
+process.on('unhandledRejection', (reason) => {
+  log('error', 'Unhandled rejection:', reason)
+})
+
 // WSL2 compatibility: disable sandbox if running under WSLg
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('no-sandbox')
@@ -59,10 +80,21 @@ function createWindow(): void {
 
   // In dev, load from Vite dev server; in prod, load the built HTML
   if (process.env.NODE_ENV === 'development') {
+    log('info', 'Loading dev server at http://localhost:5173')
     mainWindow.loadURL('http://localhost:5173/src/renderer/index.html')
+    // Open DevTools in dev for easier debugging
+    mainWindow.webContents.openDevTools({ mode: 'bottom' })
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
+
+  // Log renderer crashes
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    log('error', 'Renderer process gone:', details.reason, details.exitCode)
+  })
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    log('error', 'Page failed to load:', errorCode, errorDescription)
+  })
 
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -95,7 +127,10 @@ function createWindow(): void {
   })
 }
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  log('info', 'Repo Assist starting up')
+  createWindow()
+})
 
 app.on('window-all-closed', () => {
   app.quit()
@@ -106,175 +141,238 @@ app.on('activate', () => {
 })
 
 // === IPC Handlers === //
+// Wrapper that logs IPC errors to the terminal
+function ipcHandle(channel: string, handler: (...args: unknown[]) => Promise<unknown>): void {
+  ipcMain.handle(channel, async (_event, ...args: unknown[]) => {
+    try {
+      return await handler(...args)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const stack = err instanceof Error ? err.stack : undefined
+      log('error', `IPC ${channel} failed:`, msg)
+      if (stack) log('error', stack)
+      throw err  // Re-throw so the renderer sees the error
+    }
+  })
+}
 
 // gh CLI bridge
-ipcMain.handle('gh:exec', async (_event, command: string) => {
-  return ghBridge.exec(command)
+ipcHandle('gh:exec', async (command: unknown) => {
+  return ghBridge.exec(command as string)
 })
 
-ipcMain.handle('gh:checkModelsExtension', async () => {
+ipcHandle('gh:checkModelsExtension', async () => {
   return ghBridge.checkModelsExtension()
 })
 
-ipcMain.handle('gh:installModelsExtension', async () => {
+ipcHandle('gh:installModelsExtension', async () => {
   return ghBridge.installModelsExtension()
 })
 
-ipcMain.handle('gh:getRepos', async () => {
-  const defaultRepos = await ghBridge.getConfiguredRepos()
-  const customRepos = localState.getCustomRepos()
-  // Merge, deduplicate, preserve order
-  const all = [...defaultRepos]
-  for (const r of customRepos) {
-    if (!all.includes(r)) all.push(r)
+ipcHandle('gh:getRepos', async () => {
+  const pref = localState.getRepoStoragePreference()
+  if (pref === 'remote') {
+    // Remote mode: fetch from .repo-assist-app, fall back to local
+    const remoteRepos = await ghBridge.getConfiguredRepos()
+    if (remoteRepos.length > 0) return remoteRepos
   }
-  return all
+  // Local mode or remote returned nothing: use local repos
+  // Seed defaults on first run if empty
+  localState.seedDefaultReposIfEmpty()
+  return localState.getCustomRepos()
 })
 
-ipcMain.handle('gh:getIssues', async (_event, repo: string) => {
-  return ghBridge.getIssues(repo)
+ipcHandle('app:getRepoStorageStatus', async () => {
+  const preference = localState.getRepoStoragePreference()
+  if (preference !== null) {
+    return { preference, remoteExists: preference === 'remote' }
+  }
+  // Never asked — check if .repo-assist-app already exists
+  const remoteExists = await ghBridge.checkRepoAssistAppExists()
+  if (remoteExists) {
+    // Auto-set to remote since the repo already exists
+    localState.setRepoStoragePreference('remote')
+    return { preference: 'remote' as const, remoteExists: true }
+  }
+  return { preference: null, remoteExists: false }
 })
 
-ipcMain.handle('gh:getPRs', async (_event, repo: string) => {
-  return ghBridge.getPRs(repo)
+ipcHandle('app:setRepoStoragePreference', async (pref: unknown) => {
+  const preference = pref as 'remote' | 'local'
+  if (preference === 'remote') {
+    // Create the repo and upload current local repos
+    const created = await ghBridge.createRepoAssistApp()
+    if (!created) throw new Error('Failed to create .repo-assist-app repository')
+    // Seed defaults if empty, then upload
+    localState.seedDefaultReposIfEmpty()
+    const localRepos = localState.getCustomRepos()
+    await ghBridge.saveRemoteRepoList(localRepos)
+  }
+  localState.setRepoStoragePreference(preference)
+  // Seed defaults if local and empty
+  localState.seedDefaultReposIfEmpty()
+  return localState.getCustomRepos()
 })
 
-ipcMain.handle('gh:getRuns', async (_event, repo: string) => {
-  return ghBridge.getRuns(repo)
+ipcHandle('gh:getIssues', async (repo: unknown) => {
+  return ghBridge.getIssues(repo as string)
 })
 
-ipcMain.handle('gh:getWorkflows', async (_event, repo: string) => {
-  return ghBridge.getWorkflows(repo)
+ipcHandle('gh:getPRs', async (repo: unknown) => {
+  return ghBridge.getPRs(repo as string)
 })
 
-ipcMain.handle('gh:getFileContent', async (_event, repo: string, path: string) => {
-  return ghBridge.getFileContent(repo, path)
+ipcHandle('gh:getRuns', async (repo: unknown) => {
+  return ghBridge.getRuns(repo as string)
 })
 
-ipcMain.handle('gh:closeIssue', async (_event, repo: string, number: number, reason: string) => {
+ipcHandle('gh:getWorkflows', async (repo: unknown) => {
+  return ghBridge.getWorkflows(repo as string)
+})
+
+ipcHandle('gh:getFileContent', async (repo: unknown, filePath: unknown) => {
+  return ghBridge.getFileContent(repo as string, filePath as string)
+})
+
+ipcHandle('gh:closeIssue', async (repo: unknown, number: unknown, reason: unknown) => {
   const writeMode = localState.getWriteMode()
-  return ghBridge.closeIssue(repo, number, reason, writeMode)
+  return ghBridge.closeIssue(repo as string, number as number, reason as string, writeMode)
 })
 
-ipcMain.handle('gh:getPRChecks', async (_event, repo: string, number: number) => {
-  return ghBridge.getPRChecks(repo, number)
+ipcHandle('gh:getPRChecks', async (repo: unknown, number: unknown) => {
+  return ghBridge.getPRChecks(repo as string, number as number)
 })
 
-ipcMain.handle('gh:getPRTimeline', async (_event, repo: string, number: number) => {
-  return ghBridge.getPRTimeline(repo, number)
+ipcHandle('gh:getPRTimeline', async (repo: unknown, number: unknown) => {
+  return ghBridge.getPRTimeline(repo as string, number as number)
 })
 
-ipcMain.handle('gh:markPRReady', async (_event, repo: string, number: number) => {
+ipcHandle('gh:markPRReady', async (repo: unknown, number: unknown) => {
   const writeMode = localState.getWriteMode()
-  return ghBridge.markPRReady(repo, number, writeMode)
+  return ghBridge.markPRReady(repo as string, number as number, writeMode)
 })
 
-ipcMain.handle('gh:getPRBranchStatus', async (_event, repo: string, number: number) => {
-  return ghBridge.getPRBranchStatus(repo, number)
+ipcHandle('gh:getPRBranchStatus', async (repo: unknown, number: unknown) => {
+  return ghBridge.getPRBranchStatus(repo as string, number as number)
 })
 
-ipcMain.handle('gh:updatePRBranch', async (_event, repo: string, number: number) => {
+ipcHandle('gh:updatePRBranch', async (repo: unknown, number: unknown) => {
   const writeMode = localState.getWriteMode()
-  return ghBridge.updatePRBranch(repo, number, writeMode)
+  return ghBridge.updatePRBranch(repo as string, number as number, writeMode)
 })
 
-ipcMain.handle('gh:searchRepos', async (_event, query: string) => {
-  return ghBridge.searchRepos(query)
+ipcHandle('gh:searchRepos', async (query: unknown) => {
+  return ghBridge.searchRepos(query as string)
 })
 
-ipcMain.handle('gh:getRecentRepos', async () => {
+ipcHandle('gh:getRecentRepos', async () => {
   return ghBridge.getRecentRepos()
 })
 
-ipcMain.handle('app:addRepo', async (_event, repo: string) => {
-  localState.addRepo(repo)
+ipcHandle('app:addRepo', async (repo: unknown) => {
+  const repoStr = repo as string
+  localState.addRepo(repoStr)
+  // If in remote mode, also save to remote
+  const pref = localState.getRepoStoragePreference()
+  if (pref === 'remote') {
+    const allRepos = localState.getCustomRepos()
+    await ghBridge.saveRemoteRepoList(allRepos)
+  }
   return localState.getCustomRepos()
 })
 
-ipcMain.handle('app:removeRepo', async (_event, repo: string) => {
-  localState.removeRepo(repo)
+ipcHandle('app:removeRepo', async (repo: unknown) => {
+  const repoStr = repo as string
+  localState.removeRepo(repoStr)
+  // If in remote mode, also save to remote
+  const pref = localState.getRepoStoragePreference()
+  if (pref === 'remote') {
+    const allRepos = localState.getCustomRepos()
+    await ghBridge.saveRemoteRepoList(allRepos)
+  }
   return localState.getCustomRepos()
 })
 
-ipcMain.handle('app:openExternal', async (_event, url: string) => {
+ipcHandle('app:openExternal', async (url: unknown) => {
   // Validate the URL to prevent arbitrary command execution
   try {
-    const parsed = new URL(url)
+    const parsed = new URL(url as string)
     if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
-      openExternalURL(url)
+      openExternalURL(url as string)
     }
   } catch {
     // Invalid URL, ignore
   }
 })
 
-ipcMain.handle('gh:getIssueDetail', async (_event, repo: string, number: number) => {
-  return ghBridge.getIssueDetail(repo, number)
+ipcHandle('gh:getIssueDetail', async (repo: unknown, number: unknown) => {
+  return ghBridge.getIssueDetail(repo as string, number as number)
 })
 
-ipcMain.handle('gh:getPRDetail', async (_event, repo: string, number: number) => {
-  return ghBridge.getPRDetail(repo, number)
+ipcHandle('gh:getPRDetail', async (repo: unknown, number: unknown) => {
+  return ghBridge.getPRDetail(repo as string, number as number)
 })
 
-ipcMain.handle('gh:getPRDiff', async (_event, repo: string, number: number) => {
-  return ghBridge.getPRDiff(repo, number)
+ipcHandle('gh:getPRDiff', async (repo: unknown, number: unknown) => {
+  return ghBridge.getPRDiff(repo as string, number as number)
 })
 
-ipcMain.handle('gh:getMonthlyActivity', async (_event, repo: string) => {
-  return ghBridge.getMonthlyActivity(repo)
+ipcHandle('gh:getMonthlyActivity', async (repo: unknown) => {
+  return ghBridge.getMonthlyActivity(repo as string)
 })
 
-ipcMain.handle('gh:getEvents', async (_event, repo: string) => {
-  return ghBridge.getEvents(repo)
+ipcHandle('gh:getEvents', async (repo: unknown) => {
+  return ghBridge.getEvents(repo as string)
 })
 
-ipcMain.handle('gh:getCommandLog', async () => {
+ipcHandle('gh:getCommandLog', async () => {
   return ghBridge.getCommandLog()
 })
 
 // Write operations (respects write mode)
-ipcMain.handle('gh:writeMode', async () => {
+ipcHandle('gh:writeMode', async () => {
   return localState.getWriteMode()
 })
 
-ipcMain.handle('gh:setWriteMode', async (_event, enabled: boolean) => {
-  localState.setWriteMode(enabled)
+ipcHandle('gh:setWriteMode', async (enabled: unknown) => {
+  localState.setWriteMode(enabled as boolean)
 })
 
-ipcMain.handle('gh:addComment', async (_event, repo: string, number: number, body: string) => {
+ipcHandle('gh:addComment', async (repo: unknown, number: unknown, body: unknown) => {
   const writeMode = localState.getWriteMode()
-  return ghBridge.addComment(repo, number, body, writeMode)
+  return ghBridge.addComment(repo as string, number as number, body as string, writeMode)
 })
 
-ipcMain.handle('gh:mergePR', async (_event, repo: string, number: number) => {
+ipcHandle('gh:mergePR', async (repo: unknown, number: unknown) => {
   const writeMode = localState.getWriteMode()
-  return ghBridge.mergePR(repo, number, writeMode)
+  return ghBridge.mergePR(repo as string, number as number, writeMode)
 })
 
-ipcMain.handle('gh:approvePR', async (_event, repo: string, number: number) => {
+ipcHandle('gh:approvePR', async (repo: unknown, number: unknown) => {
   const writeMode = localState.getWriteMode()
-  return ghBridge.approvePR(repo, number, writeMode)
+  return ghBridge.approvePR(repo as string, number as number, writeMode)
 })
 
 // Local state
-ipcMain.handle('state:getReadState', async () => {
+ipcHandle('state:getReadState', async () => {
   return localState.getReadState()
 })
 
-ipcMain.handle('state:markRead', async (_event, key: string) => {
-  localState.markRead(key)
+ipcHandle('state:markRead', async (key: unknown) => {
+  localState.markRead(key as string)
 })
 
-ipcMain.handle('state:getRecapCache', async (_event, key: string) => {
-  return localState.getRecapCache(key)
+ipcHandle('state:getRecapCache', async (key: unknown) => {
+  return localState.getRecapCache(key as string)
 })
 
-ipcMain.handle('recap:generate', async (_event, repos: string[]) => {
+ipcHandle('recap:generate', async (repos: unknown) => {
+  const repoList = repos as string[]
   const clearedState = localState.getPTALCleared()
-  const cacheKey = repos.length === 1 ? repos[0] : '__all__'
+  const cacheKey = repoList.length === 1 ? repoList[0] : '__all__'
   const sinceDate = localState.getRecapClearedAt(cacheKey) ?? undefined
   try {
-    const result = await ghBridge.generateRecap(repos, clearedState, sinceDate)
+    const result = await ghBridge.generateRecap(repoList, clearedState, sinceDate)
     const summary = { markdown: result.markdown, generatedAt: new Date().toISOString() }
     localState.setRecapCache(cacheKey, summary)
     return summary
@@ -284,26 +382,27 @@ ipcMain.handle('recap:generate', async (_event, repos: string[]) => {
   }
 })
 
-ipcMain.handle('recap:clear', async (_event, key?: string) => {
-  localState.clearRecap(key)
+ipcHandle('recap:clear', async (key: unknown) => {
+  localState.clearRecap(key as string | undefined)
 })
 
 // PTAL handlers
-ipcMain.handle('ptal:scan', async (_event, repos: string[]) => {
+ipcHandle('ptal:scan', async (repos: unknown) => {
+  const repoList = repos as string[]
   const clearedState = localState.getPTALCleared()
-  const items = await ghBridge.scanPTAL(repos, clearedState)
+  const items = await ghBridge.scanPTAL(repoList, clearedState)
   localState.setPTALCache(items)
   return items
 })
 
-ipcMain.handle('ptal:getCache', async () => {
+ipcHandle('ptal:getCache', async () => {
   return localState.getPTALCache()
 })
 
-ipcMain.handle('ptal:clear', async (_event, key: string, activityId: string) => {
-  localState.clearPTALItem(key, activityId)
+ipcHandle('ptal:clear', async (key: unknown, activityId: unknown) => {
+  localState.clearPTALItem(key as string, activityId as string)
 })
 
-ipcMain.handle('ptal:getCleared', async () => {
+ipcHandle('ptal:getCleared', async () => {
   return localState.getPTALCleared()
 })

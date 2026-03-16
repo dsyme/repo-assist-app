@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import { Text, ActionList, Label, CounterLabel, RelativeTime } from '@primer/react'
-import { IssueOpenedIcon, IssueClosedIcon, CommentIcon } from '@primer/octicons-react'
+import { Text, ActionList, Label, CounterLabel, RelativeTime, Button } from '@primer/react'
+import { IssueOpenedIcon, IssueClosedIcon, CommentIcon, SyncIcon } from '@primer/octicons-react'
 import { RepoIssue } from '@shared/types'
 
 interface IssueListProps {
@@ -9,9 +9,10 @@ interface IssueListProps {
   isUnread: (repo: string, number: number, updatedAt: string) => boolean
   onMarkRead: (key: string) => void
   onSelectItem: (number: number) => void
+  onRefresh: () => void
 }
 
-export function IssueList({ repo, issues, isUnread, onMarkRead, onSelectItem }: IssueListProps) {
+export function IssueList({ repo, issues, isUnread, onMarkRead, onSelectItem, onRefresh }: IssueListProps) {
   const grouped = useMemo(() => {
     const groups: Record<string, RepoIssue[]> = {}
     for (const issue of issues) {
@@ -29,9 +30,18 @@ export function IssueList({ repo, issues, isUnread, onMarkRead, onSelectItem }: 
 
   return (
     <div>
-      <div className="panel-header">
-        <h2>Issues — {repo.split('/').pop()}</h2>
-        <span className="subtitle">{issues.length} open issues</span>
+      <div className="header-with-action">
+        <div className="panel-header">
+          <h2>Issues — {repo.split('/').pop()}</h2>
+          <span className="subtitle">{issues.length} open issues</span>
+        </div>
+        <Button
+          leadingVisual={SyncIcon}
+          onClick={onRefresh}
+          size="small"
+        >
+          Refresh
+        </Button>
       </div>
 
       {grouped.map(([label, groupIssues]) => {
