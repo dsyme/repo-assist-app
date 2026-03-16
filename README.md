@@ -2,27 +2,29 @@
 
 A cross-platform Electron desktop app for GitHub repository maintainers. Manage issues, pull requests, automation workflows, and CI status across multiple repos — all from one window, powered by the `gh` CLI.
 
-[![CI](https://github.com/dsyme/repo-assist/actions/workflows/ci.yml/badge.svg)](https://github.com/dsyme/repo-assist/actions/workflows/ci.yml)
+[![CI](https://github.com/dsyme/repo-assist-app/actions/workflows/ci.yml/badge.svg)](https://github.com/dsyme/repo-assist-app/actions/workflows/ci.yml)
 
 ## Quick Start
 
 ### Linux / macOS / WSL2
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dsyme/repo-assist/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dsyme/repo-assist-app/main/install.sh | bash
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/dsyme/repo-assist/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/dsyme/repo-assist-app/main/install.ps1 | iex
 ```
 
 Then launch:
 
 ```bash
-cd ~/repo-assist && npm run dev
+cd ~/repo-assist-app && npm run dev
 ```
+
+You may need to temporaily enable scripts
 
 ## Prerequisites
 
