@@ -318,7 +318,7 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
     try {
       await window.repoAssist.markPRReady(repo, number)
       setActionStatus(writeMode ? 'Marked as ready!' : 'Mark ready logged (dry-run, read-only mode)')
-      // Refresh detail
+      // Refresh detail and list data
       const detail = await window.repoAssist.getPRDetail(repo, number)
       setPrDetail(detail)
     } catch (err) {
@@ -537,11 +537,6 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
           </Button>
         </div>
 
-        {/* CI Status Checks */}
-        {ciChecks.length > 0 && (
-          <CIChecksPanel checks={ciChecks} openExternal={window.repoAssist.openExternal} />
-        )}
-
         {/* Body — rendered as markdown */}
         <div className="detail-body">
           {prDetail.body ? (
@@ -614,6 +609,11 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
 
         {/* Comments */}
         {renderComments(prDetail.comments, 'comments')}
+
+        {/* CI Status Checks */}
+        {ciChecks.length > 0 && (
+          <CIChecksPanel checks={ciChecks} openExternal={window.repoAssist.openExternal} />
+        )}
 
         {/* Actions */}
         <div className="detail-actions">

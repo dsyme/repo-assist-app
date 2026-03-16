@@ -207,6 +207,25 @@ button[aria-disabled="true"] {
   gap: 6px;
 }
 
+/* Refresh button on repo row — visible on hover */
+.sidebar-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  opacity: 0;
+  cursor: pointer;
+  color: var(--fgColor-muted, #9198a1);
+  transition: opacity 0.15s, color 0.15s;
+  margin-left: auto;
+}
+li:hover > .sidebar-refresh-btn,
+li:hover .sidebar-item-row .sidebar-refresh-btn {
+  opacity: 0.6;
+}
+.sidebar-refresh-btn:hover {
+  opacity: 1 !important;
+  color: var(--fgColor-accent, #58a6ff);
+}
+
 /* ── Center Panel ── */
 
 .center-panel {
@@ -861,6 +880,51 @@ button[aria-disabled="true"] {
 
 /* ── CI Checks Panel ── */
 
+/* Compact CI check icons in PR list */
+.ci-check-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ci-icon-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.ci-icon-count {
+  font-size: 11px;
+  color: var(--fgColor-muted, #9198a1);
+}
+
+/* Draft → Ready button in PR list — positioned over the row */
+.pr-list-item-wrapper {
+  position: relative;
+}
+.draft-ready-btn {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 1;
+}
+.pr-list-item-wrapper:hover .draft-ready-btn {
+  opacity: 0.7;
+}
+.draft-ready-btn:hover {
+  opacity: 1 !important;
+  background: var(--control-transparent-bgColor-hover, #1c2128);
+}
+
 .ci-checks-panel {
   margin: 8px 0;
   border: 1px solid var(--borderColor-default, #30363d);
@@ -942,6 +1006,67 @@ button[aria-disabled="true"] {
   overflow-x: auto;
   white-space: pre;
   color: #e6edf3;
+}
+
+/* Automation kind group divider */
+.automation-divider {
+  border: none;
+  height: 1px;
+  background: var(--borderColor-default, #30363d);
+  margin: 8px 0;
+}
+
+/* Automation runs section in detail view */
+.automation-runs-section {
+  padding: 0 16px 8px;
+  border-bottom: 1px solid var(--borderColor-muted, #21262d);
+}
+
+.automation-runs-section .detail-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.automation-runs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.automation-run-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fgColor-default, #e6edf3);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.automation-run-row:hover {
+  background: var(--bgColor-neutral-muted, #161b22);
+}
+
+.automation-run-trigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  color: var(--fgColor-muted, #9198a1);
+}
+
+.automation-run-trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── PTAL (Please Take a Look) ── */

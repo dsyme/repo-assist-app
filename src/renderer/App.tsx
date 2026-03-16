@@ -1,13 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Flash, ToggleSwitch, Text } from '@primer/react'
 import { ZapIcon } from '@primer/octicons-react'
-import { NavState, RepoIssue, RepoPR, RepoRun } from '@shared/types'
+import { NavState, RepoIssue, RepoPR } from '@shared/types'
 import { Sidebar } from './components/Sidebar'
 import { RecapPanel } from './components/RecapPanel'
 import { PTALPanel } from './components/PTALPanel'
 import { IssueList } from './components/IssueList'
 import { PRList } from './components/PRList'
-import { RunList } from './components/RunList'
 import { CommandLog } from './components/CommandLog'
 import { AutomationsList } from './components/AutomationsList'
 import { DetailPanel } from './components/DetailPanel'
@@ -16,7 +15,6 @@ import './styles/app.css'
 interface RepoData {
   issues: RepoIssue[]
   prs: RepoPR[]
-  runs: RepoRun[]
   loading: boolean
 }
 
@@ -47,14 +45,13 @@ export default function App() {
         const dataEntries = await Promise.all(
           repoList.map(async (repo) => {
             try {
-              const [issues, prs, runs] = await Promise.all([
+              const [issues, prs] = await Promise.all([
                 window.repoAssist.getIssues(repo),
                 window.repoAssist.getPRs(repo),
-                window.repoAssist.getRuns(repo),
               ])
-              return [repo, { issues, prs, runs, loading: false }] as const
+              return [repo, { issues, prs, loading: false }] as const
             } catch {
-              return [repo, { issues: [], prs: [], runs: [], loading: false }] as const
+              return [repo, { issues: [], prs: [], loading: false }] as const
             }
           })
         )
@@ -95,17 +92,30 @@ export default function App() {
       setRepos(prev => [...prev, repo])
       // Fetch data for the new repo
       try {
-        const [issues, prs, runs] = await Promise.all([
+        const [issues, prs] = await Promise.all([
           window.repoAssist.getIssues(repo),
           window.repoAssist.getPRs(repo),
-          window.repoAssist.getRuns(repo),
         ])
-        setRepoData(prev => ({ ...prev, [repo]: { issues, prs, runs, loading: false } }))
+        setRepoData(prev => ({ ...prev, [repo]: { issues, prs, loading: false } }))
       } catch {
-        setRepoData(prev => ({ ...prev, [repo]: { issues: [], prs: [], runs: [], loading: false } }))
+        setRepoData(prev => ({ ...prev, [repo]: { issues: [], prs: [], loading: false } }))
       }
     }
   }, [repos])
+
+  /** Explicitly re-fetch issues & PRs for a repo (user-triggered refresh) */
+  const handleRefreshRepo = useCallback(async (repo: string) => {
+    setRepoData(prev => ({ ...prev, [repo]: { ...prev[repo], loading: true } }))
+    try {
+      const [issues, prs] = await Promise.all([
+        window.repoAssist.getIssues(repo),
+        window.repoAssist.getPRs(repo),
+      ])
+      setRepoData(prev => ({ ...prev, [repo]: { issues, prs, loading: false } }))
+    } catch {
+      setRepoData(prev => ({ ...prev, [repo]: { ...prev[repo], loading: false } }))
+    }
+  }, [])
 
   // Global click handler: intercept GitHub issue/PR links
   // Normal click = navigate internally, Shift+click = open in browser
@@ -201,6 +211,7 @@ export default function App() {
           isUnread={isUnread}
           getUnreadCount={getUnreadCount}
           onAddRepo={handleAddRepo}
+          onRefreshRepo={handleRefreshRepo}
         />
 
         <div className="center-panel">
@@ -231,12 +242,6 @@ export default function App() {
               prs={repoData[nav.repo].prs}
               writeMode={writeMode}
               onSelectItem={(num: number) => setNav(prev => ({ ...prev, selectedItem: num }))}
-            />
-          )}
-          {nav.repo && nav.repoSection === 'runs' && repoData[nav.repo] && (
-            <RunList
-              repo={nav.repo}
-              runs={repoData[nav.repo].runs}
             />
           )}
           {nav.repo && nav.repoSection === 'automations' && (

@@ -4,6 +4,7 @@ import {
   SyncIcon,
   TrashIcon,
   SparkleIcon,
+  DownloadIcon,
 } from '@primer/octicons-react'
 import { marked } from 'marked'
 import { RecapSummary } from '@shared/types'
@@ -28,6 +29,9 @@ export function RecapPanel({ repos, filterRepo }: RecapPanelProps) {
   const [summary, setSummary] = useState<RecapSummary | null>(null)
   const [loading, setLoading] = useState(false)
   const [initialized, setInitialized] = useState(false)
+  const [modelsInstalled, setModelsInstalled] = useState<boolean | null>(null)
+  const [installing, setInstalling] = useState(false)
+  const [installError, setInstallError] = useState<string | null>(null)
 
   // The repos to generate for
   const targetRepos = filterRepo ? [filterRepo] : repos
@@ -40,8 +44,26 @@ export function RecapPanel({ repos, filterRepo }: RecapPanelProps) {
     setLoading(false)
   }, [cacheKey])
 
+  // Check if gh-models extension is installed
+  useEffect(() => {
+    window.repoAssist.checkModelsExtension().then(setModelsInstalled)
+  }, [])
+
+  const handleInstallModels = useCallback(async () => {
+    setInstalling(true)
+    setInstallError(null)
+    const result = await window.repoAssist.installModelsExtension()
+    setInstalling(false)
+    if (result.success) {
+      setModelsInstalled(true)
+    } else {
+      setInstallError(result.error || 'Installation failed')
+    }
+  }, [])
+
   // Load cached recap, then auto-refresh if stale or missing
   useEffect(() => {
+    if (modelsInstalled === null) return // Still checking
     let cancelled = false
     async function init() {
       const cached = await window.repoAssist.getRecapCache(cacheKey) as RecapSummary | null
@@ -50,8 +72,8 @@ export function RecapPanel({ repos, filterRepo }: RecapPanelProps) {
         setInitialized(true)
         return
       }
-      // No cache — auto generate
-      if (!cancelled && targetRepos.length > 0) {
+      // No cache — auto generate only if extension is installed
+      if (!cancelled && targetRepos.length > 0 && modelsInstalled) {
         setInitialized(true)
         setLoading(true)
         try {
@@ -69,7 +91,7 @@ export function RecapPanel({ repos, filterRepo }: RecapPanelProps) {
     init()
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cacheKey])
+  }, [cacheKey, modelsInstalled])
 
   const handleRefresh = useCallback(async () => {
     setLoading(true)
@@ -144,6 +166,24 @@ export function RecapPanel({ repos, filterRepo }: RecapPanelProps) {
         <Flash variant="danger" style={{ margin: '12px 0' }}>
           {summary.error}
         </Flash>
+      )}
+
+      {modelsInstalled === false && !summary?.markdown && (
+        <div className="empty-state">
+          <SparkleIcon size={48} />
+          <p>The <strong>gh-models</strong> extension is required for AI-powered recaps.</p>
+          <Button
+            variant="primary"
+            leadingVisual={installing ? Spinner : DownloadIcon}
+            onClick={handleInstallModels}
+            disabled={installing}
+          >
+            {installing ? 'Installing…' : 'Install gh-models extension'}
+          </Button>
+          {installError && (
+            <Flash variant="danger" style={{ marginTop: 8 }}>{installError}</Flash>
+          )}
+        </div>
       )}
 
       {!initialized && !loading && (

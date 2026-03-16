@@ -1,15 +1,22 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Text, ActionList, Label, Button, Spinner } from '@primer/react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Text, ActionList, Label, Button, Spinner, RelativeTime, CounterLabel } from '@primer/react'
 import {
   WorkflowIcon,
   LinkExternalIcon,
   FileCodeIcon,
   CopilotIcon,
   ChevronLeftIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+  ClockIcon,
+  PlayIcon,
+  CommentIcon,
+  IssueOpenedIcon,
+  ZapIcon,
+  MarkGithubIcon,
 } from '@primer/octicons-react'
 import { marked } from 'marked'
-import { RepoWorkflow } from '@shared/types'
-import { GhAwIcon, PagesDeployIcon } from './icons'
+import { RepoWorkflow, RepoRun } from '@shared/types'
 
 marked.setOptions({ gfm: true, breaks: true })
 
@@ -28,24 +35,24 @@ interface AutomationsListProps {
 /** Enriched workflow with agentic detection and resolved spec path */
 interface EnrichedWorkflow extends RepoWorkflow {
   agentic: boolean
-  /** For agentic workflows backed by .lock.yml, this is the .md spec path */
   specPath: string | null
-  /** Kind of workflow for icon/label selection */
-  kind: 'ghaw' | 'copilot' | 'deploy' | 'cicd'
+  kind: 'cicd' | 'ghaw' | 'copilot' | 'github'
 }
 
 function workflowKind(w: RepoWorkflow, agentic: boolean): EnrichedWorkflow['kind'] {
+  // GitHub built-in automations — check by name first, before agentic
+  if (w.name === 'Dependabot Updates' || w.name === 'pages-build-deployment') return 'github'
   if (w.path.startsWith('dynamic/') && w.name.toLowerCase().includes('copilot')) return 'copilot'
   if (agentic) return 'ghaw'
-  if (w.path.includes('pages') || w.name.toLowerCase().includes('pages') || w.name.toLowerCase().includes('deploy')) return 'deploy'
+  if (w.path.startsWith('dynamic/')) return 'github'
   return 'cicd'
 }
 
 function WorkflowKindIcon({ kind, size = 16 }: { kind: EnrichedWorkflow['kind']; size?: number }) {
   switch (kind) {
-    case 'ghaw': return <GhAwIcon size={size} className="gh-icon-ghaw" />
+    case 'ghaw': return <WorkflowIcon size={size} className="gh-icon-accent" />
     case 'copilot': return <CopilotIcon size={size} className="gh-icon-accent" />
-    case 'deploy': return <PagesDeployIcon size={size} className="gh-icon-deploy" />
+    case 'github': return <MarkGithubIcon size={size} className="gh-icon-muted" />
     default: return <WorkflowIcon size={size} className="gh-icon-muted" />
   }
 }
@@ -54,40 +61,96 @@ function kindLabel(kind: EnrichedWorkflow['kind']): string {
   switch (kind) {
     case 'ghaw': return 'Agentic'
     case 'copilot': return 'Copilot'
-    case 'deploy': return 'Deployment'
+    case 'github': return 'GitHub'
     default: return 'CI/CD'
   }
+}
+
+/** Ordering for kind groups */
+const KIND_ORDER: EnrichedWorkflow['kind'][] = ['ghaw', 'cicd', 'copilot', 'github']
+
+/** Compute a succinct time span like "19h", "3d", "2w" from the oldest run to now */
+function runsTimeSpan(runList: RepoRun[]): string {
+  if (runList.length === 0) return ''
+  // Runs are newest-first; oldest is last
+  const oldest = new Date(runList[runList.length - 1].createdAt)
+  const diffMs = Date.now() - oldest.getTime()
+  const hours = Math.round(diffMs / (1000 * 60 * 60))
+  if (hours < 1) return '<1h'
+  if (hours < 48) return `${hours}h`
+  const days = Math.round(hours / 24)
+  if (days < 14) return `${days}d`
+  const weeks = Math.round(days / 7)
+  return `${weeks}w`
+}
+
+/** Describe what triggered a run in a human-friendly way */
+function runTriggerDescription(run: RepoRun, isAgentic: boolean, slashCommand?: string): { icon: React.ReactNode; label: string } {
+  const event = run.event
+  const cmd = slashCommand ? `/${slashCommand}` : '/command'
+  // Agentic workflows triggered by issue/PR events are almost certainly slash-command invocations
+  if (isAgentic) {
+    if (event === 'issue_comment' || event === 'issues') {
+      return { icon: <ZapIcon size={14} />, label: `Triggered by ${cmd} on issue` }
+    }
+    if (event === 'pull_request_review_comment' || event === 'pull_request' || event === 'pull_request_target') {
+      return { icon: <ZapIcon size={14} />, label: `Triggered by ${cmd} on PR` }
+    }
+  }
+  if (event === 'schedule') {
+    return { icon: <ClockIcon size={14} />, label: 'Scheduled run' }
+  }
+  if (event === 'workflow_dispatch') {
+    return { icon: <PlayIcon size={14} />, label: 'Triggered manually' }
+  }
+  if (event === 'push') {
+    return { icon: <ZapIcon size={14} />, label: `Push to ${run.headBranch || 'branch'}` }
+  }
+  if (event === 'pull_request' || event === 'pull_request_target') {
+    return { icon: <IssueOpenedIcon size={14} />, label: 'Pull request event' }
+  }
+  if (event === 'issue_comment') {
+    return { icon: <CommentIcon size={14} />, label: 'Issue comment' }
+  }
+  if (event === 'issues') {
+    return { icon: <IssueOpenedIcon size={14} />, label: 'Issue event' }
+  }
+  return { icon: <PlayIcon size={14} />, label: event }
+}
+
+function RunStatusIcon({ status, conclusion }: { status: string; conclusion: string }) {
+  if (status === 'completed' && conclusion === 'success') return <CheckCircleIcon size={14} fill="var(--fgColor-success)" />
+  if (status === 'completed' && conclusion === 'failure') return <XCircleIcon size={14} fill="var(--fgColor-danger)" />
+  if (status === 'in_progress') return <PlayIcon size={14} fill="var(--fgColor-attention)" />
+  return <ClockIcon size={14} />
 }
 
 export function AutomationsList({ repo }: AutomationsListProps) {
   const [workflows, setWorkflows] = useState<EnrichedWorkflow[]>([])
   const [loading, setLoading] = useState(true)
+  const [runs, setRuns] = useState<RepoRun[]>([])
+  const [runsLoading, setRunsLoading] = useState(true)
   const [selectedWorkflow, setSelectedWorkflow] = useState<EnrichedWorkflow | null>(null)
   const [sourceContent, setSourceContent] = useState<string | null>(null)
   const [sourceLoading, setSourceLoading] = useState(false)
 
+  // Load workflows
   useEffect(() => {
     const load = async () => {
       setLoading(true)
       try {
         const wf = await window.repoAssist.getWorkflows(repo)
-
-        // Enrich each workflow with agentic detection
         const enriched: EnrichedWorkflow[] = await Promise.all(
           wf.map(async (w): Promise<EnrichedWorkflow> => {
-            // Dynamic workflows (GitHub-hosted agentic services like Copilot)
             if (w.path.startsWith('dynamic/')) {
               const kind = workflowKind(w, true)
-              return { ...w, agentic: true, specPath: null, kind }
+              const isGithubBuiltin = kind === 'github'
+              return { ...w, agentic: !isGithubBuiltin, specPath: null, kind }
             }
-
-            // .lock.yml = compiled form of an agentic .md workflow spec
             if (w.path.endsWith('.lock.yml')) {
               const mdPath = w.path.replace('.lock.yml', '.md')
               return { ...w, agentic: true, specPath: mdPath, kind: 'ghaw' }
             }
-
-            // For regular .yml/.yaml, check if a .lock.yml sibling exists
             if (w.path.endsWith('.yml') || w.path.endsWith('.yaml')) {
               const lockPath = w.path.replace(/\.(yml|yaml)$/, '.lock.yml')
               const lockExists = await window.repoAssist.getFileContent(repo, lockPath)
@@ -96,12 +159,10 @@ export function AutomationsList({ repo }: AutomationsListProps) {
                 return { ...w, agentic: true, specPath: mdPath, kind: 'ghaw' }
               }
             }
-
             const kind = workflowKind(w, false)
             return { ...w, agentic: false, specPath: null, kind }
           })
         )
-
         setWorkflows(enriched)
       } catch {
         setWorkflows([])
@@ -112,12 +173,36 @@ export function AutomationsList({ repo }: AutomationsListProps) {
     load()
   }, [repo])
 
-  const handleSelectWorkflow = async (wf: EnrichedWorkflow) => {
+  // Lazy-load runs after workflows
+  useEffect(() => {
+    if (loading) return
+    setRunsLoading(true)
+    window.repoAssist.getRuns(repo).then(r => {
+      setRuns(r as RepoRun[])
+      setRunsLoading(false)
+    }).catch(() => {
+      setRuns([])
+      setRunsLoading(false)
+    })
+  }, [repo, loading])
+
+  // Map workflow name → runs (exclude skipped/cancelled as defense in depth)
+  const runsByWorkflow = useMemo(() => {
+    const map = new Map<string, RepoRun[]>()
+    for (const run of runs) {
+      if (run.conclusion === 'skipped' || run.conclusion === 'cancelled') continue
+      const list = map.get(run.workflowName) || []
+      list.push(run)
+      map.set(run.workflowName, list)
+    }
+    return map
+  }, [runs])
+
+  const handleSelectWorkflow = useCallback(async (wf: EnrichedWorkflow) => {
     setSelectedWorkflow(wf)
     setSourceContent(null)
     setSourceLoading(true)
     try {
-      // For agentic workflows, load the .md spec (the primary file)
       if (wf.specPath) {
         const mdContent = await window.repoAssist.getFileContent(repo, wf.specPath)
         if (mdContent) {
@@ -126,7 +211,6 @@ export function AutomationsList({ repo }: AutomationsListProps) {
           return
         }
       }
-      // Fallback: load whatever path the API reported
       if (!wf.path.startsWith('dynamic/')) {
         const content = await window.repoAssist.getFileContent(repo, wf.path)
         setSourceContent(content)
@@ -136,10 +220,9 @@ export function AutomationsList({ repo }: AutomationsListProps) {
     } finally {
       setSourceLoading(false)
     }
-  }
+  }, [repo])
 
   const openInGitHub = (wf: EnrichedWorkflow) => {
-    // Link to the .md spec for agentic workflows, otherwise the workflow file
     const path = wf.specPath || wf.path
     window.repoAssist.openExternal(`https://github.com/${repo}/blob/main/${path}`)
   }
@@ -149,17 +232,25 @@ export function AutomationsList({ repo }: AutomationsListProps) {
     window.repoAssist.openExternal(`https://github.com/${repo}/edit/main/${path}`)
   }
 
+  const openRunInGitHub = (run: RepoRun) => {
+    window.repoAssist.openExternal(`https://github.com/${repo}/actions/runs/${run.databaseId}`)
+  }
+
   // Detail view for a selected workflow
   if (selectedWorkflow) {
+    const wfRuns = runsByWorkflow.get(selectedWorkflow.name) || []
     return (
       <AutomationDetail
         workflow={selectedWorkflow}
         repo={repo}
+        runs={wfRuns}
+        runsLoading={runsLoading}
         sourceContent={sourceContent}
         sourceLoading={sourceLoading}
         onBack={() => setSelectedWorkflow(null)}
         onViewInGitHub={() => openInGitHub(selectedWorkflow)}
         onEditInGitHub={() => openEditInGitHub(selectedWorkflow)}
+        onOpenRun={openRunInGitHub}
       />
     )
   }
@@ -171,40 +262,69 @@ export function AutomationsList({ repo }: AutomationsListProps) {
         <h2>Automations — {repo.split('/').pop()}</h2>
         <span className="subtitle">
           {workflows.length} workflows{loading ? ' (loading…)' : ''}
+          {!loading && runsLoading && ' · loading runs…'}
+          {!loading && !runsLoading && runs.length > 0 && ` \u00b7 ${runs.length} runs in last ${runsTimeSpan(runs)}`}
         </span>
       </div>
 
       {loading && (
         <div className="loading-center" style={{ height: 120 }}>
-          <div className="loading-spinner" />
+          <Spinner size="medium" />
         </div>
       )}
 
-      {!loading && (
-        <ActionList>
-          {workflows.map(wf => (
-            <ActionList.Item key={wf.id} onSelect={() => handleSelectWorkflow(wf)}>
-              <ActionList.LeadingVisual>
-                <WorkflowKindIcon kind={wf.kind} />
-              </ActionList.LeadingVisual>
-              <div>
-                <Text weight="semibold">{wf.name}</Text>
-                <div className="run-meta">
-                  <Label variant={wf.agentic ? 'accent' : 'secondary'}>
-                    {kindLabel(wf.kind)}
-                  </Label>
-                  <Label variant={wf.state === 'active' ? 'success' : 'secondary'}>
-                    {wf.state}
-                  </Label>
-                  <Text size="small" style={{ color: 'var(--fgColor-muted)', fontFamily: 'var(--fontFamily-mono)' }}>
-                    {wf.specPath || wf.path}
-                  </Text>
+      {!loading && (() => {
+        // Group workflows by kind, sort alphabetically within each group
+        const groups = new Map<EnrichedWorkflow['kind'], EnrichedWorkflow[]>()
+        for (const wf of workflows) {
+          const list = groups.get(wf.kind) || []
+          list.push(wf)
+          groups.set(wf.kind, list)
+        }
+        for (const [, group] of groups) {
+          group.sort((a, b) => a.name.localeCompare(b.name))
+        }
+        const orderedKinds = KIND_ORDER.filter(k => groups.has(k))
+
+        return (
+          <ActionList>
+            {orderedKinds.map((kind, kindIdx) => {
+              const group = groups.get(kind)!
+              return (
+                <div key={kind}>
+                  {kindIdx > 0 && <hr className="automation-divider" />}
+                  {group.map(wf => {
+                    const wfRuns = runsByWorkflow.get(wf.name) || []
+                    const runCount = wfRuns.length
+                    return (
+                      <ActionList.Item key={wf.id} onSelect={() => handleSelectWorkflow(wf)}>
+                        <ActionList.LeadingVisual>
+                          <WorkflowKindIcon kind={wf.kind} />
+                        </ActionList.LeadingVisual>
+                        <div>
+                          <Text weight="semibold">{wf.name}</Text>
+                          <div className="run-meta">
+                            <Label variant={wf.kind === 'ghaw' ? 'accent' : 'secondary'}>
+                              {kindLabel(wf.kind)}
+                            </Label>
+                            <Label variant={wf.state === 'active' ? 'success' : 'secondary'}>
+                              {wf.state}
+                            </Label>
+                            {runCount > 0 && (
+                              <CounterLabel>{runCount} in {runsTimeSpan(wfRuns)}</CounterLabel>
+                            )}
+                            {runsLoading && <Spinner size="small" />}
+                          </div>
+                        </div>
+                      </ActionList.Item>
+                    )
+                  })}
                 </div>
-              </div>
-            </ActionList.Item>
-          ))}
-        </ActionList>
-      )}
+              )
+            })}
+          </ActionList>
+        )
+      })()}
 
       {!loading && workflows.length === 0 && (
         <div className="empty-state">
@@ -220,19 +340,25 @@ export function AutomationsList({ repo }: AutomationsListProps) {
 function AutomationDetail({
   workflow,
   repo: _repo,
+  runs,
+  runsLoading,
   sourceContent,
   sourceLoading,
   onBack,
   onViewInGitHub,
   onEditInGitHub,
+  onOpenRun,
 }: {
   workflow: EnrichedWorkflow
   repo: string
+  runs: RepoRun[]
+  runsLoading: boolean
   sourceContent: string | null
   sourceLoading: boolean
   onBack: () => void
   onViewInGitHub: () => void
   onEditInGitHub: () => void
+  onOpenRun: (run: RepoRun) => void
 }) {
   // Close on Escape key
   useEffect(() => {
@@ -243,17 +369,17 @@ function AutomationDetail({
     return () => document.removeEventListener('keydown', handler)
   }, [onBack])
 
-  // Content is markdown if we loaded the .md spec file
   const isMdContent = workflow.specPath != null
 
-  // Parse frontmatter and body for markdown content
-  const { frontmatter, markdownBody } = useMemo(() => {
-    if (!isMdContent || !sourceContent) return { frontmatter: '', markdownBody: '' }
+  const { frontmatter, markdownBody, slashCommand } = useMemo(() => {
+    if (!isMdContent || !sourceContent) return { frontmatter: '', markdownBody: '', slashCommand: undefined as string | undefined }
     const fmMatch = sourceContent.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/)
-    if (fmMatch) {
-      return { frontmatter: fmMatch[1], markdownBody: fmMatch[2] }
-    }
-    return { frontmatter: '', markdownBody: sourceContent }
+    const fm = fmMatch ? fmMatch[1] : ''
+    const body = fmMatch ? fmMatch[2] : sourceContent
+    // Extract slash_command name from frontmatter (e.g. "slash_command:\n    name: repo-assist")
+    const cmdMatch = fm.match(/slash_command:\s*\n\s+name:\s*(.+)/)
+    const cmd = cmdMatch ? cmdMatch[1].trim() : undefined
+    return { frontmatter: fm, markdownBody: body, slashCommand: cmd }
   }, [isMdContent, sourceContent])
 
   const renderedBody = useMemo(() => {
@@ -265,6 +391,7 @@ function AutomationDetail({
   }, [markdownBody])
 
   const displayPath = workflow.specPath || workflow.path
+  const recentRuns = runs.filter(r => r.conclusion !== 'skipped' && r.conclusion !== 'cancelled').slice(0, 5)
 
   return (
     <div className="detail-panel fade-in">
@@ -273,10 +400,7 @@ function AutomationDetail({
           <Button size="small" variant="invisible" onClick={onBack}>
             <ChevronLeftIcon size={16} />
           </Button>
-          {workflow.agentic
-            ? <WorkflowKindIcon kind={workflow.kind} size={20} />
-            : <WorkflowKindIcon kind={workflow.kind} size={20} />
-          }
+          <WorkflowKindIcon kind={workflow.kind} size={20} />
           <div>
             <h3 className="detail-title">{workflow.name}</h3>
             <div className="detail-meta">
@@ -302,6 +426,47 @@ function AutomationDetail({
         </div>
       </div>
 
+      {/* Recent Runs */}
+      <div className="automation-runs-section">
+        <h4 className="detail-section-title">
+          <PlayIcon size={16} /> Recent Runs
+          {runsLoading && <Spinner size="small" />}
+          {!runsLoading && <CounterLabel>{runs.length}</CounterLabel>}
+        </h4>
+        {recentRuns.length > 0 && (
+          <div className="automation-runs-list">
+            {recentRuns.map(run => {
+              const trigger = runTriggerDescription(run, workflow.agentic, slashCommand)
+              return (
+                <button
+                  key={run.databaseId}
+                  className="automation-run-row"
+                  onClick={() => onOpenRun(run)}
+                >
+                  <RunStatusIcon status={run.status} conclusion={run.conclusion} />
+                  <span className="automation-run-trigger">
+                    {trigger.icon}
+                    <span>{trigger.label}</span>
+                  </span>
+                  <Label size="small" variant={
+                    run.conclusion === 'success' ? 'success'
+                    : run.conclusion === 'failure' ? 'danger'
+                    : 'secondary'
+                  }>
+                    {run.conclusion || run.status}
+                  </Label>
+                  <RelativeTime date={new Date(run.createdAt)} />
+                </button>
+              )
+            })}
+          </div>
+        )}
+        {!runsLoading && recentRuns.length === 0 && (
+          <Text size="small" style={{ color: 'var(--fgColor-muted)', padding: '8px 0' }}>No recent runs</Text>
+        )}
+      </div>
+
+      {/* Source / Spec */}
       {sourceLoading && (
         <div className="loading-center" style={{ height: 120 }}>
           <Spinner size="medium" />

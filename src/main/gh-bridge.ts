@@ -138,12 +138,18 @@ export class GhBridge {
   }
 
   async getRuns(repo: string): Promise<unknown[]> {
+    // Fetch up to 500 non-cancelled, non-skipped runs via GitHub API
+    // gh run list doesn't support excluding by conclusion, so we fetch more and filter
     const result = await this.exec(
-      `run list -R ${repo} --json databaseId,displayTitle,status,conclusion,event,createdAt,updatedAt,workflowName --limit 30`
+      `run list -R ${repo} --json databaseId,displayTitle,status,conclusion,event,createdAt,updatedAt,workflowName,headBranch --limit 200`
     )
     if (result.exitCode !== 0) return []
     try {
-      return JSON.parse(result.stdout)
+      const all = JSON.parse(result.stdout) as { conclusion: string; status: string }[]
+      return all.filter(r =>
+        r.conclusion !== 'cancelled' && r.conclusion !== 'skipped' &&
+        r.status !== 'cancelled' && r.status !== 'skipped'
+      )
     } catch {
       return []
     }
@@ -364,6 +370,27 @@ export class GhBridge {
       return { stdout: '[DRY RUN] PR would be merged', stderr: '', exitCode: 0, command: `gh ${command}`, durationMs: 0 }
     }
     return this.exec(`pr merge ${number} -R ${repo} --squash`, 'write')
+  }
+
+  /** Check if the gh-models extension is installed */
+  async checkModelsExtension(): Promise<boolean> {
+    try {
+      const { stdout } = await execFileAsync('gh', ['extension', 'list'], { timeout: 10000 })
+      return stdout.includes('gh-models')
+    } catch {
+      return false
+    }
+  }
+
+  /** Install the gh-models extension */
+  async installModelsExtension(): Promise<{ success: boolean; error?: string }> {
+    try {
+      await execFileAsync('gh', ['extension', 'install', 'github/gh-models'], { timeout: 60000 })
+      return { success: true }
+    } catch (err: unknown) {
+      const error = err as { stderr?: string }
+      return { success: false, error: error.stderr || String(err) }
+    }
   }
 
   // === AI Model ===

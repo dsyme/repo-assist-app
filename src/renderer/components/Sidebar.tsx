@@ -4,7 +4,6 @@ import {
   RepoIcon,
   IssueOpenedIcon,
   GitPullRequestIcon,
-  PlayIcon,
   TerminalIcon,
   WorkflowIcon,
   PlusCircleIcon,
@@ -12,13 +11,13 @@ import {
   SearchIcon,
   EyeIcon,
   SparkleIcon,
+  SyncIcon,
 } from '@primer/octicons-react'
-import { NavState, RepoIssue, RepoPR, RepoRun } from '@shared/types'
+import { NavState, RepoIssue, RepoPR } from '@shared/types'
 
 interface RepoData {
   issues: RepoIssue[]
   prs: RepoPR[]
-  runs: RepoRun[]
   loading: boolean
 }
 
@@ -30,9 +29,10 @@ interface SidebarProps {
   isUnread: (repo: string, number: number, updatedAt: string) => boolean
   getUnreadCount: (repo: string, items: { number: number; updatedAt: string }[]) => number
   onAddRepo?: (repo: string) => void
+  onRefreshRepo?: (repo: string) => void
 }
 
-export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount, onAddRepo }: SidebarProps) {
+export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount, onAddRepo, onRefreshRepo }: SidebarProps) {
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set())
   const [showRepoChooser, setShowRepoChooser] = useState(false)
   const [repoSearch, setRepoSearch] = useState('')
@@ -180,6 +180,15 @@ export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount, onAd
                 {(unreadIssues + unreadPRs) > 0 && (
                   <CounterLabel scheme="primary">{unreadIssues + unreadPRs}</CounterLabel>
                 )}
+                {onRefreshRepo && (
+                  <span
+                    className="sidebar-refresh-btn"
+                    title="Refresh repo data"
+                    onClick={(e) => { e.stopPropagation(); onRefreshRepo(repo) }}
+                  >
+                    {data?.loading ? <Spinner size="small" /> : <SyncIcon size={14} />}
+                  </span>
+                )}
               </span>
 
               <TreeView.SubTree>
@@ -253,18 +262,6 @@ export function Sidebar({ repos, repoData, nav, onNavigate, getUnreadCount, onAd
                       <CounterLabel scheme="primary">{unreadPRs} new</CounterLabel>
                     )}
                   </span>
-                </TreeView.Item>
-
-                {/* Automation Runs */}
-                <TreeView.Item
-                  id={`${repo}/runs`}
-                  current={nav.repo === repo && nav.repoSection === 'runs'}
-                  onSelect={() => onNavigate({ section: null, repo, repoSection: 'runs', selectedItem: null })}
-                >
-                  <TreeView.LeadingVisual>
-                    <PlayIcon />
-                  </TreeView.LeadingVisual>
-                  <Text>Automation Runs</Text>
                 </TreeView.Item>
               </TreeView.SubTree>
             </TreeView.Item>

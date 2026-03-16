@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('repoAssist', {
   getEvents: (repo: string) => ipcRenderer.invoke('gh:getEvents', repo),
   getCommandLog: () => ipcRenderer.invoke('gh:getCommandLog'),
   exec: (command: string) => ipcRenderer.invoke('gh:exec', command),
+  checkModelsExtension: () => ipcRenderer.invoke('gh:checkModelsExtension'),
+  installModelsExtension: () => ipcRenderer.invoke('gh:installModelsExtension'),
 
   // Write operations
   getWriteMode: () => ipcRenderer.invoke('gh:writeMode'),

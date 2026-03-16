@@ -19,7 +19,7 @@ export interface RepoPR {
   author: { login: string }
   labels: { name: string; color: string }[]
   reviewDecision: string
-  statusCheckRollup: { state: string }[]
+  statusCheckRollup: { status: string; conclusion: string; name: string }[]
   createdAt: string
   updatedAt: string
   headRefName: string
@@ -32,6 +32,7 @@ export interface RepoRun {
   conclusion: string
   event: string
   workflowName: string
+  headBranch: string
   createdAt: string
   updatedAt: string
 }
@@ -113,7 +114,7 @@ export interface RecapSummary {
 }
 
 export type NavSection = 'recap' | 'ptal' | 'commands' | 'settings'
-export type RepoSection = 'issues' | 'prs' | 'runs' | 'automations' | 'repo-recap' | 'repo-ptal'
+export type RepoSection = 'issues' | 'prs' | 'automations' | 'repo-recap' | 'repo-ptal'
 
 /** Detail view state — which item is expanded inline */
 export interface DetailState {
@@ -151,6 +152,8 @@ export interface RepoAssistAPI {
   getEvents: (repo: string) => Promise<unknown[]>
   getCommandLog: () => Promise<unknown[]>
   exec: (command: string) => Promise<unknown>
+  checkModelsExtension: () => Promise<boolean>
+  installModelsExtension: () => Promise<{ success: boolean; error?: string }>
   getWriteMode: () => Promise<boolean>
   setWriteMode: (enabled: boolean) => Promise<void>
   addComment: (repo: string, number: number, body: string) => Promise<unknown>

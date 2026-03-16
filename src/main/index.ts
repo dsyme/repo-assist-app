@@ -112,6 +112,14 @@ ipcMain.handle('gh:exec', async (_event, command: string) => {
   return ghBridge.exec(command)
 })
 
+ipcMain.handle('gh:checkModelsExtension', async () => {
+  return ghBridge.checkModelsExtension()
+})
+
+ipcMain.handle('gh:installModelsExtension', async () => {
+  return ghBridge.installModelsExtension()
+})
+
 ipcMain.handle('gh:getRepos', async () => {
   const defaultRepos = await ghBridge.getConfiguredRepos()
   const customRepos = localState.getCustomRepos()
