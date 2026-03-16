@@ -20,6 +20,7 @@ import {
   SkipIcon,
   SyncIcon,
   AlertIcon,
+  CheckIcon,
 } from '@primer/octicons-react'
 import { marked } from 'marked'
 import { IssueDetail, PRDetail, PRCheck, PRTimelineEvent, PRBranchStatus } from '@shared/types'
@@ -348,6 +349,20 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
     setTimeout(() => setActionStatus(null), 3000)
   }
 
+  const handleApprovePR = async () => {
+    setActionStatus('Approving PR…')
+    try {
+      await window.repoAssist.approvePR(repo, number)
+      setActionStatus(writeMode ? 'PR approved!' : 'Approval logged (dry-run, read-only mode)')
+      // Refresh to pick up the new review
+      const detail = await window.repoAssist.getPRDetail(repo, number)
+      setPrDetail(detail)
+    } catch (err) {
+      setActionStatus(`Failed: ${err}`)
+    }
+    setTimeout(() => setActionStatus(null), 3000)
+  }
+
   if (loading) {
     return (
       <div className="detail-panel fade-in">
@@ -652,6 +667,11 @@ export function DetailPanel({ type, repo, number, writeMode, onClose }: DetailPa
           {prDetail.isDraft && (
             <Button size="small" variant="primary" onClick={handleMarkReady}>
               {writeMode ? 'Ready for review' : 'Ready for review (dry-run)'}
+            </Button>
+          )}
+          {!prDetail.isDraft && prDetail.state !== 'MERGED' && prDetail.state !== 'CLOSED' && prDetail.reviewDecision !== 'APPROVED' && (
+            <Button size="small" leadingVisual={CheckIcon} onClick={handleApprovePR}>
+              {writeMode ? 'Approve PR' : 'Approve PR (dry-run)'}
             </Button>
           )}
           <Button size="small" variant="primary" onClick={handleMergePR} disabled={prDetail.isDraft}>

@@ -251,6 +251,11 @@ ipcMain.handle('gh:mergePR', async (_event, repo: string, number: number) => {
   return ghBridge.mergePR(repo, number, writeMode)
 })
 
+ipcMain.handle('gh:approvePR', async (_event, repo: string, number: number) => {
+  const writeMode = localState.getWriteMode()
+  return ghBridge.approvePR(repo, number, writeMode)
+})
+
 // Local state
 ipcMain.handle('state:getReadState', async () => {
   return localState.getReadState()

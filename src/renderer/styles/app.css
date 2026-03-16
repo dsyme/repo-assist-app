@@ -916,39 +916,60 @@ li:hover .sidebar-item-row .sidebar-remove-btn {
   color: var(--fgColor-muted, #9198a1);
 }
 
-/* Draft → Ready button in PR list — positioned over the row */
-.pr-list-item-wrapper {
-  position: relative;
+/* PR list — title line with CI icons at end */
+.pr-title-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
-.pr-hover-actions {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
+/* PR list — inline action buttons on info line */
+.pr-action-buttons {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  z-index: 1;
+  margin-left: auto;
 }
-.draft-ready-btn,
-.update-branch-btn {
+.pr-action-btn {
   display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 2px 6px;
+  gap: 3px;
+  padding: 1px 6px;
+  border: 1px solid var(--borderColor-default, #30363d);
   border-radius: 6px;
+  background: transparent;
+  color: var(--fgColor-muted, #9198a1);
+  font-size: 11px;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s;
+  line-height: 1.4;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
 }
-.pr-list-item-wrapper:hover .draft-ready-btn,
-.pr-list-item-wrapper:hover .update-branch-btn {
-  opacity: 0.7;
-}
-.draft-ready-btn:hover,
-.update-branch-btn:hover {
-  opacity: 1 !important;
+.pr-action-btn:hover {
   background: var(--control-transparent-bgColor-hover, #1c2128);
+  color: var(--fgColor-default, #f0f6fc);
+}
+.pr-action-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.pr-action-btn .pr-action-label {
+  font-size: 11px;
+}
+.pr-action-attention:hover {
+  border-color: var(--attention-fg, #d29922);
+  color: var(--attention-fg, #d29922);
+}
+.pr-action-success:hover {
+  border-color: var(--success-fg, #3fb950);
+  color: var(--success-fg, #3fb950);
+}
+.pr-action-danger:hover {
+  border-color: var(--danger-fg, #f85149);
+  color: var(--danger-fg, #f85149);
+}
+.pr-action-default:hover {
+  border-color: var(--accent-fg, #58a6ff);
+  color: var(--accent-fg, #58a6ff);
 }
 
 .ci-checks-panel {

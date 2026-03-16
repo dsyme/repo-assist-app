@@ -9,9 +9,10 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   ClockIcon,
-  ArrowRightIcon,
-  AlertIcon,
+  CheckIcon,
   SyncIcon,
+  AlertIcon,
+  NoEntryIcon,
 } from '@primer/octicons-react'
 import { RepoPR, PRBranchStatus } from '@shared/types'
 
@@ -25,6 +26,9 @@ interface PRListProps {
 export function PRList({ repo, prs, writeMode, onSelectItem }: PRListProps) {
   const [markingReady, setMarkingReady] = useState<number | null>(null)
   const [updatingBranch, setUpdatingBranch] = useState<number | null>(null)
+  const [approvingPR, setApprovingPR] = useState<number | null>(null)
+  const [mergingPR, setMergingPR] = useState<number | null>(null)
+  const [closingPR, setClosingPR] = useState<number | null>(null)
   // Optimistic overrides for PRs mutated in this view (e.g. draft → ready)
   const [localOverrides, setLocalOverrides] = useState<Record<number, Partial<RepoPR>>>({})
   // Cached branch status per PR number
@@ -47,10 +51,9 @@ export function PRList({ repo, prs, writeMode, onSelectItem }: PRListProps) {
 
   // Apply local overrides to props
   const effectivePRs = prs.map(pr => localOverrides[pr.number] ? { ...pr, ...localOverrides[pr.number] } : pr)
-  const sorted = [...effectivePRs].sort((a, b) => {
-    if (a.isDraft !== b.isDraft) return a.isDraft ? 1 : -1
-    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-  })
+  const sorted = [...effectivePRs].sort((a, b) =>
+    new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  )
 
   /** Render compact CI check icons — green ticks, red Xs, yellow clocks */
   const renderCIIcons = (pr: RepoPR) => {
@@ -72,7 +75,6 @@ export function PRList({ repo, prs, writeMode, onSelectItem }: PRListProps) {
     setMarkingReady(prNumber)
     try {
       await window.repoAssist.markPRReady(repo, prNumber)
-      // Optimistic update: mark as no longer draft
       setLocalOverrides(prev => ({ ...prev, [prNumber]: { isDraft: false } }))
     } finally {
       setMarkingReady(null)
@@ -84,14 +86,47 @@ export function PRList({ repo, prs, writeMode, onSelectItem }: PRListProps) {
     setUpdatingBranch(prNumber)
     try {
       await window.repoAssist.updatePRBranch(repo, prNumber)
-      // Optimistic update: mark as up-to-date
       setBranchStatus(prev => ({ ...prev, [prNumber]: { behindBy: 0, status: 'up_to_date' } }))
     } finally {
       setUpdatingBranch(null)
     }
   }
 
+  const handleApprovePR = async (e: React.MouseEvent, prNumber: number) => {
+    e.stopPropagation()
+    setApprovingPR(prNumber)
+    try {
+      await window.repoAssist.approvePR(repo, prNumber)
+      setLocalOverrides(prev => ({ ...prev, [prNumber]: { reviewDecision: 'APPROVED' } }))
+    } finally {
+      setApprovingPR(null)
+    }
+  }
+
+  const handleMergePR = async (e: React.MouseEvent, prNumber: number) => {
+    e.stopPropagation()
+    setMergingPR(prNumber)
+    try {
+      await window.repoAssist.mergePR(repo, prNumber)
+      setLocalOverrides(prev => ({ ...prev, [prNumber]: { state: 'MERGED' } }))
+    } finally {
+      setMergingPR(null)
+    }
+  }
+
+  const handleClosePR = async (e: React.MouseEvent, prNumber: number) => {
+    e.stopPropagation()
+    setClosingPR(prNumber)
+    try {
+      await window.repoAssist.exec(`pr close ${prNumber} -R ${repo}`)
+      setLocalOverrides(prev => ({ ...prev, [prNumber]: { state: 'CLOSED' } }))
+    } finally {
+      setClosingPR(null)
+    }
+  }
+
   const isRepoAssist = (pr: RepoPR) => pr.labels?.some(l => l.name === 'repo-assist')
+  const isOpen = (pr: RepoPR) => pr.state !== 'MERGED' && pr.state !== 'CLOSED'
 
   return (
     <div>
@@ -106,73 +141,108 @@ export function PRList({ repo, prs, writeMode, onSelectItem }: PRListProps) {
       <ActionList>
         {sorted.map(pr => {
           const isBot = isRepoAssist(pr)
+          const open = isOpen(pr)
+          const bs = branchStatus[pr.number]
+          const behind = bs?.status === 'behind'
+          const behindCount = bs?.behindBy ?? 0
           return (
-            <div key={pr.number} className="pr-list-item-wrapper">
-              <ActionList.Item onSelect={() => onSelectItem(pr.number)}>
-                <ActionList.LeadingVisual>
-                  {pr.isDraft
-                    ? <GitPullRequestDraftIcon size={16} className="gh-icon-draft" />
-                    : pr.state === 'MERGED'
-                      ? <GitMergeIcon size={16} className="gh-icon-merged" />
-                      : pr.state === 'CLOSED'
-                        ? <GitPullRequestClosedIcon size={16} className="gh-icon-closed" />
-                        : <GitPullRequestIcon size={16} className="gh-icon-open" />
-                  }
-                </ActionList.LeadingVisual>
-                <div>
+            <ActionList.Item key={pr.number} onSelect={() => onSelectItem(pr.number)}>
+              <ActionList.LeadingVisual>
+                {pr.isDraft
+                  ? <GitPullRequestDraftIcon size={16} className="gh-icon-draft" />
+                  : pr.state === 'MERGED'
+                    ? <GitMergeIcon size={16} className="gh-icon-merged" />
+                    : pr.state === 'CLOSED'
+                      ? <GitPullRequestClosedIcon size={16} className="gh-icon-closed" />
+                      : <GitPullRequestIcon size={16} className="gh-icon-open" />
+                }
+              </ActionList.LeadingVisual>
+              <div>
+                <span className="pr-title-line">
                   <Text weight="semibold">
                     #{pr.number} {pr.title.replace('[Repo Assist] ', '')}
                   </Text>
-                  <div className="pr-meta">
-                    {renderCIIcons(pr)}
-                    {branchStatus[pr.number]?.status === 'behind' && (
-                      <span className="ci-icon-group" title={`${branchStatus[pr.number].behindBy} commit${branchStatus[pr.number].behindBy !== 1 ? 's' : ''} behind base branch`}>
-                        <AlertIcon size={14} className="gh-icon-attention" />
-                      </span>
+                  {renderCIIcons(pr)}
+                </span>
+                <div className="pr-meta">
+                  {isBot && (
+                    <Label variant="accent">🤖 Repo Assist</Label>
+                  )}
+                  <Text size="small" style={{ color: 'var(--fgColor-muted)' }}>
+                    by {pr.author?.login ?? 'unknown'}
+                  </Text>
+                  <RelativeTime date={new Date(pr.updatedAt)} />
+                  {/* Inline action buttons */}
+                  <span className="pr-action-buttons">
+                    {behind && open && (
+                      <button
+                        className="pr-action-btn pr-action-attention"
+                        title={`${behindCount} commit${behindCount !== 1 ? 's' : ''} behind — update branch`}
+                        onClick={(e) => handleUpdateBranch(e, pr.number)}
+                        disabled={updatingBranch === pr.number}
+                      >
+                        {updatingBranch === pr.number
+                          ? <Spinner size="small" />
+                          : <><AlertIcon size={14} /> <span className="pr-action-label">{behindCount} behind — update</span></>
+                        }
+                      </button>
                     )}
-                    {isBot && (
-                      <Label variant="accent">🤖 Repo Assist</Label>
+                    {pr.isDraft && open && (
+                      <button
+                        className="pr-action-btn pr-action-default"
+                        title="Mark as ready for review"
+                        onClick={(e) => handleMarkReady(e, pr.number)}
+                        disabled={markingReady === pr.number}
+                      >
+                        {markingReady === pr.number
+                          ? <Spinner size="small" />
+                          : <><GitPullRequestIcon size={14} /> <span className="pr-action-label">Ready</span></>
+                        }
+                      </button>
                     )}
-                    <Text size="small" style={{ color: 'var(--fgColor-muted)' }}>
-                      by {pr.author?.login ?? 'unknown'}
-                    </Text>
-                    <RelativeTime date={new Date(pr.updatedAt)} />
-                  </div>
+                    {!pr.isDraft && open && pr.reviewDecision !== 'APPROVED' && (
+                      <button
+                        className="pr-action-btn pr-action-success"
+                        title="Approve PR"
+                        onClick={(e) => handleApprovePR(e, pr.number)}
+                        disabled={approvingPR === pr.number}
+                      >
+                        {approvingPR === pr.number
+                          ? <Spinner size="small" />
+                          : <><CheckIcon size={14} /> <span className="pr-action-label">Approve</span></>
+                        }
+                      </button>
+                    )}
+                    {!pr.isDraft && open && (
+                      <button
+                        className="pr-action-btn pr-action-success"
+                        title="Merge PR"
+                        onClick={(e) => handleMergePR(e, pr.number)}
+                        disabled={mergingPR === pr.number}
+                      >
+                        {mergingPR === pr.number
+                          ? <Spinner size="small" />
+                          : <><GitMergeIcon size={14} /> <span className="pr-action-label">Merge</span></>
+                        }
+                      </button>
+                    )}
+                    {open && (
+                      <button
+                        className="pr-action-btn pr-action-danger"
+                        title="Close PR"
+                        onClick={(e) => handleClosePR(e, pr.number)}
+                        disabled={closingPR === pr.number}
+                      >
+                        {closingPR === pr.number
+                          ? <Spinner size="small" />
+                          : <NoEntryIcon size={14} />
+                        }
+                      </button>
+                    )}
+                  </span>
                 </div>
-              </ActionList.Item>
-              <div className="pr-hover-actions">
-                {branchStatus[pr.number]?.status === 'behind' && (
-                  <span
-                    className="update-branch-btn"
-                    title={`Update branch (${branchStatus[pr.number].behindBy} commit${branchStatus[pr.number].behindBy !== 1 ? 's' : ''} behind)`}
-                    onClick={(e) => handleUpdateBranch(e, pr.number)}
-                  >
-                    {updatingBranch === pr.number ? (
-                      <Spinner size="small" />
-                    ) : (
-                      <SyncIcon size={14} className="gh-icon-attention" />
-                    )}
-                  </span>
-                )}
-                {pr.isDraft && (
-                  <span
-                    className="draft-ready-btn"
-                    title="Mark as ready for review"
-                    onClick={(e) => handleMarkReady(e, pr.number)}
-                  >
-                    {markingReady === pr.number ? (
-                      <Spinner size="small" />
-                    ) : (
-                      <>
-                        <GitPullRequestDraftIcon size={14} className="gh-icon-draft" />
-                        <ArrowRightIcon size={10} />
-                        <GitPullRequestIcon size={14} className="gh-icon-open" />
-                      </>
-                    )}
-                  </span>
-                )}
               </div>
-            </div>
+            </ActionList.Item>
           )
         })}
       </ActionList>

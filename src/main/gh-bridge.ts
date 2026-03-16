@@ -264,6 +264,22 @@ export class GhBridge {
   }
 
 
+  /** Approve a PR by submitting an APPROVE review */
+  async approvePR(repo: string, number: number, writeMode: boolean): Promise<GhExecResult> {
+    const command = `pr review ${number} -R ${repo} --approve`
+    if (!writeMode) {
+      this.addToLog({
+        command: `gh ${command}`,
+        startedAt: new Date().toISOString(),
+        durationMs: 0,
+        exitCode: 0,
+        mode: 'dry-run'
+      })
+      return { stdout: '[DRY RUN] PR would be approved', stderr: '', exitCode: 0, command: `gh ${command}`, durationMs: 0 }
+    }
+    return this.exec(command, 'write')
+  }
+
   async getPRDiff(repo: string, number: number): Promise<string> {
     const result = await this.exec(
       `pr diff ${number} -R ${repo}`
