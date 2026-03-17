@@ -444,8 +444,9 @@ export class GhBridge {
     return this.exec(`issue comment ${number} -R ${repo} --body "${body}"`, 'write')
   }
 
-  async mergePR(repo: string, number: number, writeMode: boolean): Promise<GhExecResult> {
-    const command = `pr merge ${number} -R ${repo}`
+  async mergePR(repo: string, number: number, writeMode: boolean, bypass: boolean = false): Promise<GhExecResult> {
+    const adminFlag = bypass ? ' --admin' : ''
+    const command = `pr merge ${number} -R ${repo}${adminFlag}`
     if (!writeMode) {
       this.addToLog({
         command: `gh ${command}`,
@@ -461,7 +462,7 @@ export class GhBridge {
     let result = await this.exec(command, 'write')
     if (result.exitCode !== 0) {
       for (const strategy of ['--merge', '--squash', '--rebase']) {
-        result = await this.exec(`pr merge ${number} -R ${repo} ${strategy}`, 'write')
+        result = await this.exec(`pr merge ${number} -R ${repo} ${strategy}${adminFlag}`, 'write')
         if (result.exitCode === 0) break
       }
     }

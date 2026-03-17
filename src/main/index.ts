@@ -466,9 +466,9 @@ ipcHandle('gh:addComment', async (repo: unknown, number: unknown, body: unknown)
   return result
 })
 
-ipcHandle('gh:mergePR', async (repo: unknown, number: unknown) => {
+ipcHandle('gh:mergePR', async (repo: unknown, number: unknown, bypass: unknown) => {
   const writeMode = localState.getWriteMode()
-  const result = await ghBridge.mergePR(repo as string, number as number, writeMode)
+  const result = await ghBridge.mergePR(repo as string, number as number, writeMode, bypass === true)
   if (result.exitCode !== 0) {
     throw new Error(result.stderr || `Merge failed (exit code ${result.exitCode})`)
   }

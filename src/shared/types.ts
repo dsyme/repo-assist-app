@@ -186,7 +186,7 @@ export interface RepoAssistAPI {
   getWriteMode: () => Promise<boolean>
   setWriteMode: (enabled: boolean) => Promise<void>
   addComment: (repo: string, number: number, body: string) => Promise<unknown>
-  mergePR: (repo: string, number: number) => Promise<unknown>
+  mergePR: (repo: string, number: number, bypass?: boolean) => Promise<unknown>
   approvePR: (repo: string, number: number) => Promise<unknown>
   openExternal: (url: string) => Promise<void>
   getReadState: () => Promise<Record<string, string>>

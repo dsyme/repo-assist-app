@@ -332,10 +332,10 @@ export function DetailPanel({ type, repo, number, writeMode, onClose, onMerged, 
     }
   }
 
-  const handleMergePR = async () => {
+  const handleMergePR = async (bypass: boolean = false) => {
     setActionStatus('Merging PR…')
     try {
-      await window.repoAssist.mergePR(repo, number)
+      await window.repoAssist.mergePR(repo, number, bypass)
       if (writeMode) {
         setActionStatus('PR merged!')
         setTimeout(() => onMerged?.(), 800)
@@ -856,7 +856,7 @@ export function DetailPanel({ type, repo, number, writeMode, onClose, onMerged, 
               <Button
                 size="small"
                 variant={isBlocked ? 'danger' : 'primary'}
-                onClick={handleMergePR}
+                onClick={() => handleMergePR(isBlocked)}
               >
                 {isBlocked
                   ? (writeMode ? 'Merge (bypass rules)' : 'Merge (bypass rules, dry-run)')

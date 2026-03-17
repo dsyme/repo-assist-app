@@ -119,11 +119,11 @@ export function PRList({ repo, prs, writeMode, onSelectItem, onRefresh, onPRStat
     }
   }
 
-  const handleMergePR = async (e: React.MouseEvent, prNumber: number) => {
+  const handleMergePR = async (e: React.MouseEvent, prNumber: number, bypass: boolean = false) => {
     e.stopPropagation()
     setMergingPR(prNumber)
     try {
-      await window.repoAssist.mergePR(repo, prNumber)
+      await window.repoAssist.mergePR(repo, prNumber, bypass)
       setLocalOverrides(prev => ({ ...prev, [prNumber]: { state: 'MERGED' } }))
       onPRStateChange?.(prNumber)
     } finally {
@@ -263,7 +263,7 @@ export function PRList({ repo, prs, writeMode, onSelectItem, onRefresh, onPRStat
                         <button
                           className={isBlocked ? 'pr-action-btn pr-action-danger' : 'pr-action-btn pr-action-success'}
                           title={isBlocked ? 'Merge (bypass rules)' : 'Merge PR'}
-                          onClick={(e) => handleMergePR(e, pr.number)}
+                          onClick={(e) => handleMergePR(e, pr.number, isBlocked)}
                           disabled={mergingPR === pr.number}
                         >
                           {mergingPR === pr.number
