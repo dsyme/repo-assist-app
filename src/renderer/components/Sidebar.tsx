@@ -12,6 +12,7 @@ import {
   EyeIcon,
   SparkleIcon,
   SyncIcon,
+  LinkExternalIcon,
 } from '@primer/octicons-react'
 import { NavState, RepoIssue, RepoPR, PTALItem } from '@shared/types'
 
@@ -184,6 +185,13 @@ export function Sidebar({ repos, repoData, nav, onNavigate, ptalItems, onAddRepo
                 {repoPtalCount > 0 && (
                   <CounterLabel scheme="primary">{repoPtalCount}</CounterLabel>
                 )}
+                <span
+                  className="sidebar-refresh-btn"
+                  title="Open in GitHub"
+                  onClick={(e) => { e.stopPropagation(); window.repoAssist.openExternal(`https://github.com/${repo}`) }}
+                >
+                  <LinkExternalIcon size={14} />
+                </span>
                 {onRefreshRepo && (
                   <span
                     className="sidebar-refresh-btn"

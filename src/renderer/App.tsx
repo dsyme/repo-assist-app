@@ -399,12 +399,14 @@ export default function App() {
               items={ptalItems}
               loading={ptalLoading}
               initialized={ptalInitialized}
+              repoData={repoData}
               onClear={handleClearPTAL}
               onRefresh={() => refreshPTAL()}
               onNavigate={(target) => {
                 returnNavRef.current = { ...nav }
                 setNav(target)
               }}
+              onPRStateChange={(repo, prNumber) => removePTALForPR(repo, prNumber)}
             />
           )}
           {nav.section === 'commands' && (
@@ -444,12 +446,14 @@ export default function App() {
               loading={ptalLoading}
               initialized={ptalInitialized}
               filterRepo={nav.repo}
+              repoData={repoData}
               onClear={handleClearPTAL}
               onRefresh={() => refreshPTAL()}
               onNavigate={(target) => {
                 returnNavRef.current = { ...nav }
                 setNav(target)
               }}
+              onPRStateChange={(repo, prNumber) => removePTALForPR(repo, prNumber)}
             />
           )}
           {/* Detail view for selected issue or PR */}

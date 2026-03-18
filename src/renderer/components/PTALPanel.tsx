@@ -9,7 +9,8 @@ import {
   GitCommitIcon,
   XIcon,
 } from '@primer/octicons-react'
-import { PTALItem, NavState } from '@shared/types'
+import { PTALItem, RepoPR, NavState } from '@shared/types'
+import { usePRListActions, PRItemRow } from './PRItemRow'
 
 interface PTALPanelProps {
   repos: string[]
@@ -19,32 +20,15 @@ interface PTALPanelProps {
   initialized: boolean
   /** Optional: restrict to a single repo (for repo-specific view) */
   filterRepo?: string
+  /** PR data per repo — used to render rich PR rows */
+  repoData?: Record<string, { prs: RepoPR[] }>
   onClear: (item: PTALItem) => void
   onRefresh: () => void
   onNavigate: (nav: NavState) => void
+  onPRStateChange?: (repo: string, prNumber: number) => void
 }
 
-/**
- * Build a human-friendly action title for a PTAL item
- * e.g. "Check comment on #136 — Fix lazy series" or "Review #187 — Add property tests"
- */
-function ptalActionTitle(item: PTALItem): { verb: string; number: string; title: string } {
-  const cleanTitle = item.title.replace(/^\[Repo Assist\]\s*/, '')
-  const number = `#${item.number}`
-  if (item.lastActivity.type === 'comment') {
-    return { verb: 'Check comment on', number, title: cleanTitle }
-  }
-  if (item.lastActivity.type === 'commit') {
-    return { verb: 'Review update on', number, title: cleanTitle }
-  }
-  // 'created' — the bot opened the issue/PR
-  if (item.type === 'pr') {
-    return { verb: 'Review', number, title: cleanTitle }
-  }
-  return { verb: 'Review', number, title: cleanTitle }
-}
-
-export function PTALPanel({ repos, items, loading, initialized, filterRepo, onClear, onRefresh, onNavigate }: PTALPanelProps) {
+export function PTALPanel({ repos, items, loading, initialized, filterRepo, repoData, onClear, onRefresh, onNavigate, onPRStateChange }: PTALPanelProps) {
   // Local clearing set: tracks items mid-animation so they render with fade-out
   // before actually being removed from App state
   const [clearing, setClearing] = useState<Set<string>>(new Set())
@@ -140,57 +124,141 @@ export function PTALPanel({ repos, items, loading, initialized, filterRepo, onCl
                   <Text weight="semibold" size="small">{shortRepo(group.repo)}</Text>
                 </div>
               )}
-              <ActionList>
-                {group.items.map((item, idx) => {
-                  const isClearing = clearing.has(item.key)
-                  const action = ptalActionTitle(item)
-                  return (
-                    <div
-                      key={item.key}
-                      className={`ptal-row fade-in ${isClearing ? 'ptal-clearing' : ''}`}
-                      style={{ animationDelay: `${idx * 40}ms` }}
-                    >
-                      <ActionList.Item
-                        onClick={() => handleItemClick(item)}
-                        className="ptal-item"
-                      >
-                        <ActionList.LeadingVisual>
-                          {item.type === 'pr'
-                            ? <GitPullRequestIcon size={16} className="gh-icon-open" />
-                            : <IssueOpenedIcon size={16} className="gh-icon-open" />
-                          }
-                        </ActionList.LeadingVisual>
-                        <div className="ptal-item-content">
-                          <div className="ptal-item-header">
-                            <Text style={{ color: 'var(--fgColor-muted)' }}>{action.verb} </Text>
-                            <Text weight="semibold">{action.number}</Text>
-                            <Text style={{ color: 'var(--fgColor-muted)' }}> — </Text>
-                            <Text>{action.title}</Text>
-                          </div>
-                          <div className="ptal-item-meta">
-                            <PTALActivityBadge activity={item.lastActivity} />
-                            <RelativeTime date={new Date(item.lastActivity.when)} style={{ fontSize: 12 }} />
-                          </div>
-                        </div>
-                      </ActionList.Item>
-                      <button
-                        className="ptal-dismiss-btn"
-                        onClick={() => handleClear(item)}
-                        aria-label="Dismiss item"
-                        title="Dismiss"
-                      >
-                        <XIcon size={14} />
-                      </button>
-                    </div>
-                  )
-                })}
-              </ActionList>
+              <PTALRepoGroup
+                repo={group.repo}
+                items={group.items}
+                repoPRs={repoData?.[group.repo]?.prs ?? []}
+                clearing={clearing}
+                onClear={handleClear}
+                onItemClick={handleItemClick}
+                onPRStateChange={onPRStateChange ? (n) => onPRStateChange(group.repo, n) : undefined}
+              />
             </div>
           ))}
         </div>
       )}
     </div>
   )
+}
+
+/** Renders a group of PTAL items for a single repo — enables the usePRListActions hook */
+function PTALRepoGroup({ repo, items, repoPRs, clearing, onClear, onItemClick, onPRStateChange }: {
+  repo: string
+  items: PTALItem[]
+  repoPRs: RepoPR[]
+  clearing: Set<string>
+  onClear: (item: PTALItem) => void
+  onItemClick: (item: PTALItem) => void
+  onPRStateChange?: (prNumber: number) => void
+}) {
+  // Filter to just the PRs that appear in PTAL items
+  const ptalPRNumbers = useMemo(() => new Set(items.filter(i => i.type === 'pr').map(i => i.number)), [items])
+  const relevantPRs = useMemo(() => repoPRs.filter(pr => ptalPRNumbers.has(pr.number)), [repoPRs, ptalPRNumbers])
+
+  const actions = usePRListActions(repo, relevantPRs, onPRStateChange)
+
+  // Build a lookup from PR number to RepoPR (with overrides applied)
+  const prLookup = useMemo(() => {
+    const map = new Map<number, RepoPR>()
+    for (const pr of relevantPRs) {
+      const overridden = actions.localOverrides[pr.number] ? { ...pr, ...actions.localOverrides[pr.number] } : pr
+      map.set(pr.number, overridden)
+    }
+    return map
+  }, [relevantPRs, actions.localOverrides])
+
+  return (
+    <ActionList>
+      {items.map((item, idx) => {
+        const isClearing = clearing.has(item.key)
+        const pr = item.type === 'pr' ? prLookup.get(item.number) : undefined
+
+        // PR items with matching RepoPR data: render rich PRItemRow
+        if (pr && pr.state !== 'MERGED' && pr.state !== 'CLOSED') {
+          return (
+            <div
+              key={item.key}
+              className={`ptal-row fade-in ${isClearing ? 'ptal-clearing' : ''}`}
+              style={{ animationDelay: `${idx * 40}ms` }}
+            >
+              <PRItemRow
+                pr={pr}
+                actions={actions}
+                onSelect={() => onItemClick(item)}
+              />
+              <button
+                className="ptal-dismiss-btn"
+                onClick={() => onClear(item)}
+                aria-label="Dismiss item"
+                title="Dismiss"
+              >
+                <XIcon size={14} />
+              </button>
+            </div>
+          )
+        }
+
+        // Issue items (or PR items without matching data): keep existing rendering
+        const action = ptalActionTitle(item)
+        return (
+          <div
+            key={item.key}
+            className={`ptal-row fade-in ${isClearing ? 'ptal-clearing' : ''}`}
+            style={{ animationDelay: `${idx * 40}ms` }}
+          >
+            <ActionList.Item
+              onClick={() => onItemClick(item)}
+            >
+              <ActionList.LeadingVisual>
+                {item.type === 'pr'
+                  ? <GitPullRequestIcon size={16} className="gh-icon-open" />
+                  : <IssueOpenedIcon size={16} className="gh-icon-open" />
+                }
+              </ActionList.LeadingVisual>
+              <div className="ptal-item-content">
+                <div className="ptal-item-header">
+                  <Text style={{ color: 'var(--fgColor-muted)' }}>{action.verb} </Text>
+                  <Text weight="semibold">{action.number}</Text>
+                  <Text style={{ color: 'var(--fgColor-muted)' }}> — </Text>
+                  <Text>{action.title}</Text>
+                </div>
+                <div className="ptal-item-meta">
+                  <PTALActivityBadge activity={item.lastActivity} />
+                  <RelativeTime date={new Date(item.lastActivity.when)} style={{ fontSize: 12 }} />
+                </div>
+              </div>
+            </ActionList.Item>
+            <button
+              className="ptal-dismiss-btn"
+              onClick={() => onClear(item)}
+              aria-label="Dismiss item"
+              title="Dismiss"
+            >
+              <XIcon size={14} />
+            </button>
+          </div>
+        )
+      })}
+    </ActionList>
+  )
+}
+
+/**
+ * Build a human-friendly action title for a PTAL item
+ */
+function ptalActionTitle(item: PTALItem): { verb: string; number: string; title: string } {
+  const cleanTitle = item.title.replace(/^\[Repo Assist\]\s*/, '')
+  const number = `#${item.number}`
+  if (item.lastActivity.type === 'comment') {
+    return { verb: 'Check comment on', number, title: cleanTitle }
+  }
+  if (item.lastActivity.type === 'commit') {
+    return { verb: 'Review update on', number, title: cleanTitle }
+  }
+  if (item.type === 'pr') {
+    return { verb: 'Review', number, title: cleanTitle }
+  }
+  return { verb: 'Review', number, title: cleanTitle }
 }
 
 function PTALActivityBadge({ activity }: { activity: PTALItem['lastActivity'] }) {

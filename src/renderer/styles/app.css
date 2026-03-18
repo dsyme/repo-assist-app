@@ -683,8 +683,6 @@ li:hover .sidebar-item-row .sidebar-remove-btn {
   border: 1px solid var(--borderColor-default, #30363d);
   border-radius: 6px;
   overflow-x: auto;
-  overflow-y: auto;
-  max-height: 600px;
   margin: 8px 0 16px 0;
   background: var(--bgColor-default, #0d1117);
 }
@@ -1199,7 +1197,7 @@ li:hover .sidebar-item-row .sidebar-remove-btn {
   transition: opacity 0.2s ease-out, max-height 0.3s ease-out;
 }
 
-.ptal-row .ptal-item {
+.ptal-row > li {
   flex: 1;
   min-width: 0;
 }
