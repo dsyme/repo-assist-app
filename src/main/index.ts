@@ -218,7 +218,11 @@ ipcHandle('gh:getRepos', async () => {
   if (pref === 'remote') {
     // Remote mode: fetch from .repo-assist-app, fall back to local
     const remoteRepos = await ghBridge.getConfiguredRepos()
-    if (remoteRepos.length > 0) return remoteRepos
+    if (remoteRepos.length > 0) {
+      // Keep local in sync so add/remove have a current baseline
+      localState.setLocalRepos(remoteRepos)
+      return remoteRepos
+    }
   }
   // Local mode or remote returned nothing: use local repos
   // Seed defaults on first run if empty
@@ -390,25 +394,35 @@ ipcHandle('gh:getRecentRepos', async () => {
 
 ipcHandle('app:addRepo', async (repo: unknown) => {
   const repoStr = repo as string
-  localState.addRepo(repoStr)
-  // If in remote mode, also save to remote
   const pref = localState.getRepoStoragePreference()
   if (pref === 'remote') {
-    const allRepos = localState.getCustomRepos()
-    await ghBridge.saveRemoteRepoList(allRepos)
+    // Read current authoritative list from remote
+    const remoteRepos = await ghBridge.getConfiguredRepos()
+    const currentRepos = remoteRepos.length > 0 ? remoteRepos : localState.getCustomRepos()
+    if (!currentRepos.includes(repoStr)) {
+      currentRepos.push(repoStr)
+    }
+    localState.setLocalRepos(currentRepos)
+    await ghBridge.saveRemoteRepoList(currentRepos)
+    return currentRepos
   }
+  localState.addRepo(repoStr)
   return localState.getCustomRepos()
 })
 
 ipcHandle('app:removeRepo', async (repo: unknown) => {
   const repoStr = repo as string
-  localState.removeRepo(repoStr)
-  // If in remote mode, also save to remote
   const pref = localState.getRepoStoragePreference()
   if (pref === 'remote') {
-    const allRepos = localState.getCustomRepos()
-    await ghBridge.saveRemoteRepoList(allRepos)
+    // Read current authoritative list from remote
+    const remoteRepos = await ghBridge.getConfiguredRepos()
+    const currentRepos = remoteRepos.length > 0 ? remoteRepos : localState.getCustomRepos()
+    const updatedRepos = currentRepos.filter(r => r !== repoStr)
+    localState.setLocalRepos(updatedRepos)
+    await ghBridge.saveRemoteRepoList(updatedRepos)
+    return updatedRepos
   }
+  localState.removeRepo(repoStr)
   return localState.getCustomRepos()
 })
 
