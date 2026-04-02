@@ -24,6 +24,7 @@ import {
 } from '@primer/octicons-react'
 import { marked } from 'marked'
 import { IssueDetail, PRDetail, PRCheck, PRTimelineEvent, PRBranchStatus } from '@shared/types'
+import { sanitizeHtml } from '../utils/sanitize'
 
 /** Wrapper around RelativeTime that guards against invalid dates */
 function SafeRelativeTime({ date, ...props }: { date: Date; style?: React.CSSProperties }) {
@@ -36,15 +37,6 @@ marked.setOptions({
   gfm: true,
   breaks: true,
 })
-
-/** Sanitize HTML by stripping script tags and event handlers */
-function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '')
-    .replace(/\bon\w+\s*=\s*[^\s>]*/gi, '')
-    .replace(/javascript:/gi, '')
-}
 
 /** Render markdown to sanitized HTML; converts #N to in-app links */
 function renderMarkdown(md: string, repo?: string): string {
