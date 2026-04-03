@@ -26,6 +26,7 @@ export class GhBridge {
   private commandLog: CommandLogEntry[] = []
   private maxLogEntries = 500
   private cachedUsername: string | null = null
+  private cachedExtensionList: string | null = null
 
   /** Get the authenticated GitHub username (cached) */
   async getUsername(): Promise<string> {
@@ -244,17 +245,7 @@ export class GhBridge {
 
   async markPRReady(repo: string, number: number, writeMode: boolean): Promise<GhExecResult> {
     const command = `pr ready ${number} -R ${repo}`
-    if (!writeMode) {
-      this.addToLog({
-        command: `gh ${command}`,
-        startedAt: new Date().toISOString(),
-        durationMs: 0,
-        exitCode: 0,
-        mode: 'dry-run'
-      })
-      return { stdout: '[DRY RUN] PR would be marked as ready', stderr: '', exitCode: 0, command: `gh ${command}`, durationMs: 0 }
-    }
-    return this.exec(command, 'write')
+    return this.execWriteOrDryRun(command, writeMode, '[DRY RUN] PR would be marked as ready')
   }
 
   /** Check if a PR branch is behind its base branch */
@@ -282,34 +273,14 @@ export class GhBridge {
   /** Update a PR branch by merging the base branch into the head */
   async updatePRBranch(repo: string, number: number, writeMode: boolean): Promise<GhExecResult> {
     const command = `api repos/${repo}/pulls/${number}/update-branch -X PUT`
-    if (!writeMode) {
-      this.addToLog({
-        command: `gh ${command}`,
-        startedAt: new Date().toISOString(),
-        durationMs: 0,
-        exitCode: 0,
-        mode: 'dry-run'
-      })
-      return { stdout: '[DRY RUN] PR branch would be updated', stderr: '', exitCode: 0, command: `gh ${command}`, durationMs: 0 }
-    }
-    return this.exec(command, 'write')
+    return this.execWriteOrDryRun(command, writeMode, '[DRY RUN] PR branch would be updated')
   }
 
 
   /** Approve a PR by submitting an APPROVE review */
   async approvePR(repo: string, number: number, writeMode: boolean): Promise<GhExecResult> {
     const command = `pr review ${number} -R ${repo} --approve`
-    if (!writeMode) {
-      this.addToLog({
-        command: `gh ${command}`,
-        startedAt: new Date().toISOString(),
-        durationMs: 0,
-        exitCode: 0,
-        mode: 'dry-run'
-      })
-      return { stdout: '[DRY RUN] PR would be approved', stderr: '', exitCode: 0, command: `gh ${command}`, durationMs: 0 }
-    }
-    return this.exec(command, 'write')
+    return this.execWriteOrDryRun(command, writeMode, '[DRY RUN] PR would be approved')
   }
 
   async getPRDiff(repo: string, number: number): Promise<string> {
@@ -362,17 +333,7 @@ export class GhBridge {
   async closeIssue(repo: string, number: number, reason: string, writeMode: boolean): Promise<GhExecResult> {
     const reasonFlag = reason === 'not_planned' ? '--reason "not planned"' : ''
     const command = `issue close ${number} -R ${repo} ${reasonFlag}`.trim()
-    if (!writeMode) {
-      this.addToLog({
-        command: `gh ${command}`,
-        startedAt: new Date().toISOString(),
-        durationMs: 0,
-        exitCode: 0,
-        mode: 'dry-run'
-      })
-      return { stdout: '[DRY RUN] Issue would be closed', stderr: '', exitCode: 0, command: `gh ${command}`, durationMs: 0 }
-    }
-    return this.exec(command, 'write')
+    return this.execWriteOrDryRun(command, writeMode, '[DRY RUN] Issue would be closed')
   }
 
   async searchRepos(query: string): Promise<unknown[]> {
@@ -430,16 +391,8 @@ export class GhBridge {
 
   async addComment(repo: string, number: number, body: string, writeMode: boolean): Promise<GhExecResult> {
     if (!writeMode) {
-      // Dry-run: log but don't execute
       const command = `issue comment ${number} -R ${repo} --body "${body.substring(0, 50)}..."`
-      this.addToLog({
-        command: `gh ${command}`,
-        startedAt: new Date().toISOString(),
-        durationMs: 0,
-        exitCode: 0,
-        mode: 'dry-run'
-      })
-      return { stdout: '[DRY RUN] Comment would be added', stderr: '', exitCode: 0, command: `gh ${command}`, durationMs: 0 }
+      return this.execWriteOrDryRun(command, false, '[DRY RUN] Comment would be added')
     }
     return this.exec(`issue comment ${number} -R ${repo} --body "${body}"`, 'write')
   }
@@ -448,14 +401,7 @@ export class GhBridge {
     const adminFlag = bypass ? ' --admin' : ''
     const command = `pr merge ${number} -R ${repo}${adminFlag}`
     if (!writeMode) {
-      this.addToLog({
-        command: `gh ${command}`,
-        startedAt: new Date().toISOString(),
-        durationMs: 0,
-        exitCode: 0,
-        mode: 'dry-run'
-      })
-      return { stdout: '[DRY RUN] PR would be merged', stderr: '', exitCode: 0, command: `gh ${command}`, durationMs: 0 }
+      return this.execWriteOrDryRun(command, false, '[DRY RUN] PR would be merged')
     }
     // Try merge without specifying strategy — gh will use the repo's default allowed method
     // If that fails (interactive prompt), try each strategy explicitly
@@ -480,18 +426,14 @@ export class GhBridge {
 
   /** Check if the gh-models extension is installed */
   async checkModelsExtension(): Promise<boolean> {
-    try {
-      const { stdout } = await execFileAsync('gh', ['extension', 'list'], { timeout: 10000 })
-      return stdout.includes('gh-models')
-    } catch {
-      return false
-    }
+    return (await this.listExtensions()).includes('gh-models')
   }
 
   /** Install the gh-models extension */
   async installModelsExtension(): Promise<{ success: boolean; error?: string }> {
     try {
       await execFileAsync('gh', ['extension', 'install', 'github/gh-models'], { timeout: 60000 })
+      this.cachedExtensionList = null // invalidate cache after install
       return { success: true }
     } catch (err: unknown) {
       const error = err as { stderr?: string }
@@ -501,12 +443,7 @@ export class GhBridge {
 
   /** Check if the gh-aw extension is installed */
   async checkAwExtension(): Promise<boolean> {
-    try {
-      const { stdout } = await execFileAsync('gh', ['extension', 'list'], { timeout: 10000 })
-      return stdout.includes('gh-aw')
-    } catch {
-      return false
-    }
+    return (await this.listExtensions()).includes('gh-aw')
   }
 
   /** Install or upgrade the gh-aw extension */
@@ -516,10 +453,12 @@ export class GhBridge {
       try {
         await execFileAsync('gh', ['extension', 'upgrade', 'gh-aw'], { timeout: 60000 })
       } catch { /* ignore upgrade failures */ }
+      this.cachedExtensionList = null // invalidate cache after upgrade
       return { success: true }
     }
     try {
       await execFileAsync('gh', ['extension', 'install', 'github/gh-aw'], { timeout: 60000 })
+      this.cachedExtensionList = null // invalidate cache after install
       return { success: true }
     } catch (err: unknown) {
       const error = err as { stderr?: string }
@@ -780,6 +719,33 @@ ${sections.join('\n\n')}`
     } catch {
       return []
     }
+  }
+
+  /** Execute a write command or log it as a dry-run when writeMode is false. */
+  private execWriteOrDryRun(command: string, writeMode: boolean, dryRunMessage: string): Promise<GhExecResult> {
+    if (!writeMode) {
+      this.addToLog({
+        command: `gh ${command}`,
+        startedAt: new Date().toISOString(),
+        durationMs: 0,
+        exitCode: 0,
+        mode: 'dry-run'
+      })
+      return Promise.resolve({ stdout: dryRunMessage, stderr: '', exitCode: 0, command: `gh ${command}`, durationMs: 0 })
+    }
+    return this.exec(command, 'write')
+  }
+
+  /** Return the cached output of `gh extension list`, fetching it once per session. */
+  private async listExtensions(): Promise<string> {
+    if (this.cachedExtensionList !== null) return this.cachedExtensionList
+    try {
+      const { stdout } = await execFileAsync('gh', ['extension', 'list'], { timeout: 10000 })
+      this.cachedExtensionList = stdout
+    } catch {
+      this.cachedExtensionList = ''
+    }
+    return this.cachedExtensionList
   }
 
   getCommandLog(): CommandLogEntry[] {
