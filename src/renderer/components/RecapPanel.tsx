@@ -8,16 +8,9 @@ import {
 } from '@primer/octicons-react'
 import { marked } from 'marked'
 import { RecapSummary } from '@shared/types'
+import { sanitizeHtml } from '../utils/sanitize'
 
 marked.setOptions({ gfm: true, breaks: true })
-
-function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/\bon\w+\s*=\s*["'][^"']*["']/gi, '')
-    .replace(/\bon\w+\s*=\s*[^\s>]*/gi, '')
-    .replace(/javascript:/gi, '')
-}
 
 interface RecapPanelProps {
   repos: string[]
