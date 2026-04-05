@@ -1,39 +1,24 @@
 {
-  "last_run": "2026-04-04T05:37:00Z",
-  "run_id": "23972377449",
+  "last_run": "2026-04-05T05:54:28Z",
+  "run_id": "23995422905",
   "comments_made": {},
   "issues_commented": [],
   "fix_attempts": [],
   "improvement_prs": [
     {
-      "branch": "repo-assist/eng-fix-tsconfig-baseurl-deprecation-2026-04-02-5cd18fdcf57f68a2",
-      "title": "[Repo Assist] fix(tsconfig): remove deprecated baseUrl option",
+      "branch": "repo-assist/improve-workflow-toggle-error-handling-and-types",
+      "title": "[Repo Assist] fix(ui): workflow toggle error feedback + RepoIssue comments type fix",
       "status": "pr_created",
-      "created": "2026-04-04",
-      "note": "PR created successfully this run"
-    },
-    {
-      "branch": "repo-assist/improve-shared-sanitize-html-406cc9fea7113f81",
-      "title": "[Repo Assist] refactor(renderer): extract shared sanitizeHtml utility",
-      "status": "pr_created",
-      "created": "2026-04-04",
-      "note": "PR created successfully this run"
-    },
-    {
-      "branch": "repo-assist/improve-gh-bridge-dry-run-and-ext-cache-84403523eb2acab9",
-      "title": "[Repo Assist] refactor(gh-bridge): extract dry-run helper and cache extension list",
-      "status": "pr_created",
-      "created": "2026-04-04",
-      "note": "PR created successfully this run"
-    },
-    {
-      "branch": "repo-assist/eng-bundle-minor-updates-2026-04-04",
-      "title": "[Repo Assist] chore(deps): bundle minor/patch dependency updates",
-      "status": "pr_created",
-      "created": "2026-04-04",
-      "note": "PR created this run - updates @primer/* 19.22→19.23, 11.5→11.6, 38.15→38.18, electron 41.0→41.1, marked 17.0.4→17.0.5, styled-components 6.3.11→6.3.12, vitest 4.1.0→4.1.2"
+      "created": "2026-04-05",
+      "note": "Error feedback for handleToggleWorkflow; fix RepoIssue.comments type; add enableWorkflow/disableWorkflow dry-run tests"
     }
   ],
+  "merged_prs": [
+    { "number": 14, "title": "fix(tsconfig): remove deprecated baseUrl option" },
+    { "number": 15, "title": "refactor(renderer): extract shared sanitizeHtml utility" },
+    { "number": 16, "title": "refactor(gh-bridge): extract dry-run helper and cache extension list" },
+    { "number": 19, "title": "chore(deps): bundle minor/patch dependency updates" }
+  ],
   "monthly_activity_issue": 5,
-  "notes": "All 4 PRs created successfully. Major version bumps (vite 8, typescript 6, @vitejs/plugin-react 6) identified but excluded - warrant separate assessment."
+  "notes": "All 4 PRs from 2026-04-04 run were merged by dsyme. New PR created this run. Major version bumps (vite 8, typescript 6, @vitejs/plugin-react 6) still to assess."
 }
