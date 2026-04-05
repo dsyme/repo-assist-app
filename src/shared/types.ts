@@ -8,7 +8,7 @@ export interface RepoIssue {
   author: { login: string }
   createdAt: string
   updatedAt: string
-  comments: { totalCount: number }[]
+  comments: { author: { login: string }; body: string; createdAt: string }[]
 }
 
 export interface RepoPR {

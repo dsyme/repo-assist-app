@@ -200,6 +200,20 @@ describe('GhBridge', () => {
       expect(result.stdout).toContain('DRY RUN')
       expect(result.exitCode).toBe(0)
     })
+
+    it('enableWorkflow returns dry-run result when writeMode is false', async () => {
+      const result = await bridge.enableWorkflow('owner/repo', 123, false)
+      expect(result.stdout).toContain('DRY RUN')
+      expect(result.exitCode).toBe(0)
+      expect(mockExecFileAsync).not.toHaveBeenCalled()
+    })
+
+    it('disableWorkflow returns dry-run result when writeMode is false', async () => {
+      const result = await bridge.disableWorkflow('owner/repo', 123, false)
+      expect(result.stdout).toContain('DRY RUN')
+      expect(result.exitCode).toBe(0)
+      expect(mockExecFileAsync).not.toHaveBeenCalled()
+    })
   })
 
   describe('getIssues', () => {
