@@ -1,6 +1,6 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import type { PTALItem } from '../shared/types'
+import type { PTALItem, PRBranchStatus } from '../shared/types'
 
 const execFileAsync = promisify(execFile)
 
@@ -249,7 +249,7 @@ export class GhBridge {
   }
 
   /** Check if a PR branch is behind its base branch */
-  async getPRBranchStatus(repo: string, number: number): Promise<{ behindBy: number; status: string }> {
+  async getPRBranchStatus(repo: string, number: number): Promise<PRBranchStatus> {
     // Get the PR's head and base refs
     const prResult = await this.exec(
       `pr view ${number} -R ${repo} --json headRefName,baseRefName`
