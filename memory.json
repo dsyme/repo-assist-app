@@ -1,6 +1,6 @@
 {
-  "last_run": "2026-04-10T06:08:11Z",
-  "run_id": "24229090563",
+  "last_run": "2026-04-11T05:40:44Z",
+  "run_id": "24275861437",
   "comments_made": {},
   "issues_commented": [],
   "fix_attempts": [],
@@ -64,9 +64,9 @@
     },
     {
       "branch": "repo-assist/test-sanitize-html-2026-04-10",
-      "pr": null,
+      "pr": 27,
       "title": "[Repo Assist] test(sanitize): add tests for sanitizeHtml security utility",
-      "status": "pr_created",
+      "status": "pr_open",
       "created": "2026-04-10",
       "note": "Task 9: 25 tests for sanitizeHtml XSS prevention function - script tags, event handlers, javascript: protocol stripping"
     },
@@ -77,26 +77,30 @@
       "status": "pr_created",
       "created": "2026-04-10",
       "note": "Task 4: bundle dep updates: @primer/react 38.19.0, marked 17.0.6, react/react-dom/react-is 19.2.5, styled-components 6.4.0, vite 7.3.2, vitest 4.1.4"
+    },
+    {
+      "branch": "repo-assist/test-gh-bridge-methods-2026-04-11",
+      "pr": null,
+      "title": "[Repo Assist] test(gh-bridge): add tests for enableWorkflow, disableWorkflow, getFileContent, getWorkflows",
+      "status": "pr_created",
+      "created": "2026-04-11",
+      "note": "Task 9: 12 tests for enableWorkflow/disableWorkflow (dry-run + write mode), getFileContent (base64 decode, null cases), getWorkflows (multi-line JSON parsing)"
+    },
+    {
+      "branch": "repo-assist/improve-branch-status-type-2026-04-11",
+      "pr": null,
+      "title": "[Repo Assist] refactor(gh-bridge): use PRBranchStatus type for getPRBranchStatus return",
+      "status": "pr_created",
+      "created": "2026-04-11",
+      "note": "Task 5: import PRBranchStatus from shared/types; use precise union type for getPRBranchStatus return instead of anonymous { behindBy: number; status: string }"
     }
   ],
   "merged_prs": [
-    {
-      "number": 14,
-      "title": "fix(tsconfig): remove deprecated baseUrl option"
-    },
-    {
-      "number": 15,
-      "title": "refactor(renderer): extract shared sanitizeHtml utility"
-    },
-    {
-      "number": 16,
-      "title": "refactor(gh-bridge): extract dry-run helper and cache extension list"
-    },
-    {
-      "number": 19,
-      "title": "chore(deps): bundle minor/patch dependency updates"
-    }
+    {"number": 14, "title": "fix(tsconfig): remove deprecated baseUrl option"},
+    {"number": 15, "title": "refactor(renderer): extract shared sanitizeHtml utility"},
+    {"number": 16, "title": "refactor(gh-bridge): extract dry-run helper and cache extension list"},
+    {"number": 19, "title": "chore(deps): bundle minor/patch dependency updates"}
   ],
   "monthly_activity_issue": 5,
-  "notes": "8 open Repo Assist PRs: #20 (workflow toggle/types), #21 (addComment quoting/closePR), #22 (reopenIssue), #23 (issue: ci tests - needs manual PR), #24 (run actions), #25 (label management), #26 (vitest config fix). New PRs this run: sanitize test (branch test-sanitize-html-2026-04-10, PR# TBD), dep updates (branch eng-bundle-deps-2026-04-10, PR# TBD). MCP tools not in tool list but accessible via HTTP - workaround used successfully."
+  "notes": "9 open Repo Assist PRs: #20 (workflow toggle/types), #21 (addComment quoting/closePR), #22 (reopenIssue), #23 (issue: ci tests - needs manual PR), #24 (run actions), #25 (label management), #26 (vitest config), #27 (sanitize tests). New this run: test-gh-bridge-methods (12 new tests), improve-branch-status-type (type fix). Monthly activity issue #5 updated with replace operation to fix duplicated body. Issue #28 is dep bundle tracking issue."
 }
