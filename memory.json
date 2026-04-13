@@ -1,6 +1,6 @@
 {
-  "last_run": "2026-04-12T06:04:06Z",
-  "run_id": "24300066603",
+  "last_run": "2026-04-13T06:27:51Z",
+  "run_id": "24328961946",
   "comments_made": {},
   "issues_commented": [],
   "fix_attempts": [],
@@ -93,6 +93,22 @@
       "status": "pr_open",
       "created": "2026-04-11",
       "note": "Task 5: import PRBranchStatus from shared/types; use precise union type for getPRBranchStatus return instead of anonymous { behindBy: number; status: string }"
+    },
+    {
+      "branch": "repo-assist/improve-gh-bridge-return-types-2026-04-13",
+      "pr": null,
+      "title": "[Repo Assist] refactor(gh-bridge): use shared types for return types of data-fetching methods",
+      "status": "pr_submitted",
+      "created": "2026-04-13",
+      "note": "Task 5: tighten getIssues/getPRs/getRuns/getIssueDetail/getPRDetail/getPRChecks/getPRTimeline/getWorkflows return types from unknown to shared types"
+    },
+    {
+      "branch": "repo-assist/feat-request-review-2026-04-13",
+      "pr": null,
+      "title": "[Repo Assist] feat(pr): add request review capability",
+      "status": "pr_submitted",
+      "created": "2026-04-13",
+      "note": "Task 10: requestReview() in GhBridge + IPC + preload + DetailPanel UI (inline form with TextInput, write-mode guard)"
     }
   ],
   "merged_prs": [
@@ -114,5 +130,5 @@
     }
   ],
   "monthly_activity_issue": 5,
-  "notes": "11 open Repo Assist PRs: #20, #21, #22, #24, #25, #26, #27, #31, #32 + bundle-deps (submitted). PRs #29 and #30 flagged as duplicates/botched - comments added recommending closure. Monthly activity issue #5 updated. Next run: close out #29/#30 if maintainer hasnt, consider adding tests for getIssueDetail/getPRDetail."
+  "notes": "13 open Repo Assist PRs (11 confirmed + 2 submitted this run). PRs #29 and #30 still need closure. Issues #28 and #33 are open with bundle-deps title - unclear if PRs or issues, needs investigation. Monthly activity issue #5 updated. Next: verify #28/#33 status, add tests for getIssueDetail/getPRDetail."
 }
