@@ -231,6 +231,7 @@ describe('GhBridge', () => {
       expect(result.exitCode).toBe(0)
       expect(mockExecFileAsync).not.toHaveBeenCalled()
     })
+  })
 
   describe('getIssues', () => {
     it('returns parsed JSON on success', async () => {
