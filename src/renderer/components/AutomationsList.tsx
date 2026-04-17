@@ -235,7 +235,14 @@ export function AutomationsList({ repo, writeMode }: AutomationsListProps) {
           w.id === wf.id ? { ...w, state: isActive ? 'disabled_manually' : 'active' } : w
         ))
       }
-    } catch { /* ignore */ } finally {
+    } catch (err) {
+      await window.repoAssist.showMessageBox({
+        type: 'error',
+        message: `Failed to ${wf.state === 'active' ? 'disable' : 'enable'} workflow`,
+        detail: String(err),
+        buttons: ['OK'],
+      }).catch(() => {})
+    } finally {
       setTogglingWorkflow(null)
     }
   }, [repo, writeMode])
