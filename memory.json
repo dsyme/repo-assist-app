@@ -1,20 +1,20 @@
 {
-  "last_run": "2026-04-18T05:51:06Z",
-  "run_id": "24598222830",
+  "last_run": "2026-04-19T06:08:35Z",
+  "run_id": "24622480043",
   "comments_made": {},
   "issues_commented": [],
   "fix_attempts": [],
   "improvement_prs": [
     {"branch": "repo-assist/fix-write-ops-quoting-2026-04-06-50c994935933d080", "pr": 21, "status": "pr_open", "note": "CI passing all 3 platforms. Ready to merge. Bug fix: addComment quoting + closePR write-mode bypass."},
-    {"branch": "repo-assist/feat-reopen-issue-2026-04-06-3e01c2ac1a406a0a", "pr": 22, "status": "pr_open", "note": "Rebased + write-mode test added 2026-04-18. CI pending."},
-    {"branch": "repo-assist/feat-run-actions-2026-04-07-1e14022587d05348", "pr": 24, "status": "pr_open"},
-    {"branch": "repo-assist/feat-label-management-2026-04-08-369231bcacb3633c", "pr": 25, "status": "pr_open"},
-    {"branch": "repo-assist/eng-vitest-config-2026-04-09-db4e45634a89dbed", "pr": 26, "status": "pr_open"},
-    {"branch": "repo-assist/test-sanitize-html-2026-04-10-702cc62787da9048", "pr": 27, "status": "pr_open"},
-    {"branch": "repo-assist/improve-branch-status-type-2026-04-11-aec3372087b65d3c", "pr": 31, "status": "pr_open"},
-    {"branch": "repo-assist/test-gh-bridge-methods-2026-04-11-df645cc52387b3c4", "pr": 32, "status": "pr_open", "note": "84 tests passing. Good test PR."},
-    {"branch": "repo-assist/improve-gh-bridge-return-types-2026-04-13-ea543eb122eaf371", "pr": 34, "status": "pr_open"},
-    {"branch": "repo-assist/feat-request-review-2026-04-13-45353f00b6f51ed8", "pr": 35, "status": "pr_open"}
+    {"branch": "repo-assist/feat-reopen-issue-2026-04-06-3e01c2ac1a406a0a", "pr": 22, "status": "pr_open", "note": "Rebased + write-mode test added 2026-04-18. CI pending. Issue #39 blocks push to branch (protected files)."},
+    {"branch": "repo-assist/feat-run-actions-2026-04-07-1e14022587d05348", "pr": 24, "status": "pr_open", "note": "Rebased 2026-04-19, conflict resolved in gh-bridge.test.ts. Not pushed (limit reached). Push next run."},
+    {"branch": "repo-assist/feat-label-management-2026-04-08-369231bcacb3633c", "pr": 25, "status": "pr_open", "note": "Rebased 2026-04-19, conflict resolved in gh-bridge.test.ts. Not pushed (limit reached). Push next run."},
+    {"branch": "repo-assist/eng-vitest-config-2026-04-09-db4e45634a89dbed", "pr": 26, "status": "pr_open", "note": "Pushed 2026-04-19. CI pending."},
+    {"branch": "repo-assist/test-sanitize-html-2026-04-10-702cc62787da9048", "pr": 27, "status": "pr_open", "note": "Pushed 2026-04-19. CI pending."},
+    {"branch": "repo-assist/improve-branch-status-type-2026-04-11-aec3372087b65d3c", "pr": 31, "status": "pr_open", "note": "Pushed 2026-04-19. CI pending."},
+    {"branch": "repo-assist/test-gh-bridge-methods-2026-04-11-df645cc52387b3c4", "pr": 32, "status": "pr_open", "note": "Pushed 2026-04-19. CI pending."},
+    {"branch": "repo-assist/improve-gh-bridge-return-types-2026-04-13-ea543eb122eaf371", "pr": 34, "status": "pr_open", "note": "Pushed 2026-04-19. CI pending."},
+    {"branch": "repo-assist/feat-request-review-2026-04-13-45353f00b6f51ed8", "pr": 35, "status": "pr_open", "note": "Rebased 2026-04-19, clean rebase. Not pushed (limit reached). Push next run."}
   ],
   "closed_prs": [],
   "garbage_prs": [29, 30],
@@ -24,5 +24,5 @@
   ],
   "monthly_activity_issue": 5,
   "stale_issues_to_close": [23, 28, 33, 36, 37],
-  "notes": "PR #21 is CI-passing and ready to merge (bug fix). PR #22 pushed on 2026-04-18 with rebase+test, CI pending. PRs #24-35 have no CI yet (need pushes to trigger). PRs #29, #30 are garbage placeholders. Issues #23,#28,#33,#36,#37 are fallback issues (PR creation failed); suggest closing. Issue #38 is workflow failure auto-issue. Next: try rebasing and pushing PRs #32, #24, #34 to trigger CI."
+  "notes": "PR #21 is CI-passing and ready to merge (bug fix). PRs #26,#27,#31,#32,#34 pushed 2026-04-19 - CI pending. PRs #24,#25,#35 rebased locally but not pushed (push limit reached). Push them next run. Issue #39 is protected-files notification for PR #22 push. Issues #23,#28,#33,#36,#37 are stale fallback issues (suggest closing). Issue #38 is workflow failure auto-issue (expires Apr 23)."
 }
