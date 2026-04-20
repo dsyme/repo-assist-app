@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('repoAssist', {
   disableWorkflow: (repo: string, workflowId: number) => ipcRenderer.invoke('gh:disableWorkflow', repo, workflowId),
   getFileContent: (repo: string, path: string) => ipcRenderer.invoke('gh:getFileContent', repo, path),
   closeIssue: (repo: string, number: number, reason: string) => ipcRenderer.invoke('gh:closeIssue', repo, number, reason),
+  cancelRun: (repo: string, runId: number) => ipcRenderer.invoke('gh:cancelRun', repo, runId),
+  rerunFailedJobs: (repo: string, runId: number) => ipcRenderer.invoke('gh:rerunFailedJobs', repo, runId),
   applyPatchPR: (issueRepo: string, targetRepo: string, commands: string[]) => ipcRenderer.invoke('gh:applyPatchPR', issueRepo, targetRepo, commands),
   getRepoPermission: (repo: string) => ipcRenderer.invoke('gh:getRepoPermission', repo),
   getViewerLogin: () => ipcRenderer.invoke('gh:getViewerLogin'),
@@ -47,6 +49,7 @@ contextBridge.exposeInMainWorld('repoAssist', {
   addComment: (repo: string, number: number, body: string) => ipcRenderer.invoke('gh:addComment', repo, number, body),
   mergePR: (repo: string, number: number, bypass?: boolean) => ipcRenderer.invoke('gh:mergePR', repo, number, bypass ?? false),
   approvePR: (repo: string, number: number) => ipcRenderer.invoke('gh:approvePR', repo, number),
+  requestReview: (repo: string, number: number, reviewer: string) => ipcRenderer.invoke('gh:requestReview', repo, number, reviewer),
   openExternal: (url: string) => ipcRenderer.invoke('app:openExternal', url),
 
   // Local state

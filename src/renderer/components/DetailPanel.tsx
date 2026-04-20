@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { Text, Button, Label, RelativeTime, Flash, Spinner } from '@primer/react'
+import { Text, Button, Label, RelativeTime, Flash, Spinner, TextInput } from '@primer/react'
 import {
   IssueOpenedIcon,
   IssueClosedIcon,
@@ -193,6 +193,8 @@ export function DetailPanel({ type, repo, number, writeMode, onClose, onMerged, 
   const [refreshKey, setRefreshKey] = useState(0)
   const [repoPermission, setRepoPermission] = useState<string | null>(null)
   const [viewerLogin, setViewerLogin] = useState<string | null>(null)
+  const [reviewerInput, setReviewerInput] = useState('')
+  const [showReviewerForm, setShowReviewerForm] = useState(false)
 
   // Detect patch application instructions in issue body
   const patchInstructions = useMemo(
@@ -472,6 +474,25 @@ export function DetailPanel({ type, repo, number, writeMode, onClose, onMerged, 
       await window.repoAssist.approvePR(repo, number)
       setActionStatus(writeMode ? 'PR approved!' : 'Approval logged (dry-run, read-only mode)')
       // Refresh to pick up the new review
+      const detail = await window.repoAssist.getPRDetail(repo, number)
+      setPrDetail(detail)
+    } catch (err) {
+      setActionStatus(`Failed: ${err}`)
+    }
+    setBusyAction(null)
+    setTimeout(() => setActionStatus(null), 3000)
+  }
+
+  const handleRequestReview = async () => {
+    const reviewer = reviewerInput.trim()
+    if (!reviewer) return
+    setBusyAction('request-review')
+    setActionStatus(`Requesting review from @${reviewer}…`)
+    try {
+      await window.repoAssist.requestReview(repo, number, reviewer)
+      setActionStatus(writeMode ? `Review requested from @${reviewer}!` : `Request logged (dry-run, read-only mode)`)
+      setReviewerInput('')
+      setShowReviewerForm(false)
       const detail = await window.repoAssist.getPRDetail(repo, number)
       setPrDetail(detail)
     } catch (err) {
@@ -906,10 +927,41 @@ export function DetailPanel({ type, repo, number, writeMode, onClose, onMerged, 
           <Button size="small" variant="danger" onClick={handleClosePR} disabled={!!busyAction}>
             {busyAction === 'close-pr' ? <><Spinner size="small" /> Closing…</> : (writeMode ? 'Close PR' : 'Close PR (dry-run)')}
           </Button>
+          {!showReviewerForm && prDetail.state !== 'MERGED' && prDetail.state !== 'CLOSED' && (
+            <Button size="small" onClick={() => setShowReviewerForm(true)} disabled={!!busyAction}>
+              Request review
+            </Button>
+          )}
           <Button size="small" leadingVisual={LinkExternalIcon} onClick={openInGitHub}>
             Open in GitHub
           </Button>
         </div>
+
+        {/* Request review inline form */}
+        {showReviewerForm && prDetail.state !== 'MERGED' && prDetail.state !== 'CLOSED' && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+            <TextInput
+              size="small"
+              placeholder="GitHub username"
+              value={reviewerInput}
+              onChange={e => setReviewerInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleRequestReview() }}
+              style={{ flexGrow: 1 }}
+              aria-label="Reviewer username"
+            />
+            <Button
+              size="small"
+              variant="primary"
+              onClick={handleRequestReview}
+              disabled={!reviewerInput.trim() || !!busyAction}
+            >
+              {busyAction === 'request-review' ? <><Spinner size="small" /> Requesting…</> : `Request${!writeMode ? ' (dry-run)' : ''}`}
+            </Button>
+            <Button size="small" variant="invisible" onClick={() => { setShowReviewerForm(false); setReviewerInput('') }}>
+              Cancel
+            </Button>
+          </div>
+        )}
 
         {/* Add Comment */}
         <div className="detail-comment-form">

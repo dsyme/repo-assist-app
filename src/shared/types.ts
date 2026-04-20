@@ -8,7 +8,7 @@ export interface RepoIssue {
   author: { login: string }
   createdAt: string
   updatedAt: string
-  comments: { totalCount: number }[]
+  comments: { author: { login: string }; body: string; createdAt: string }[]
 }
 
 export interface RepoPR {
@@ -168,6 +168,8 @@ export interface RepoAssistAPI {
   updatePRBranch: (repo: string, number: number) => Promise<unknown>
   getFileContent: (repo: string, path: string) => Promise<string | null>
   closeIssue: (repo: string, number: number, reason: string) => Promise<unknown>
+  cancelRun: (repo: string, runId: number) => Promise<unknown>
+  rerunFailedJobs: (repo: string, runId: number) => Promise<unknown>
   applyPatchPR: (issueRepo: string, targetRepo: string, commands: string[]) => Promise<void>
   getRepoPermission: (repo: string) => Promise<string>
   getViewerLogin: () => Promise<string>
@@ -192,6 +194,7 @@ export interface RepoAssistAPI {
   addComment: (repo: string, number: number, body: string) => Promise<unknown>
   mergePR: (repo: string, number: number, bypass?: boolean) => Promise<unknown>
   approvePR: (repo: string, number: number) => Promise<unknown>
+  requestReview: (repo: string, number: number, reviewer: string) => Promise<unknown>
   openExternal: (url: string) => Promise<void>
   getReadState: () => Promise<Record<string, string>>
   markRead: (key: string) => Promise<void>
