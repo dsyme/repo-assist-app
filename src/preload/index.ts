@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('repoAssist', {
   disableWorkflow: (repo: string, workflowId: number) => ipcRenderer.invoke('gh:disableWorkflow', repo, workflowId),
   getFileContent: (repo: string, path: string) => ipcRenderer.invoke('gh:getFileContent', repo, path),
   closeIssue: (repo: string, number: number, reason: string) => ipcRenderer.invoke('gh:closeIssue', repo, number, reason),
+  cancelRun: (repo: string, runId: number) => ipcRenderer.invoke('gh:cancelRun', repo, runId),
+  rerunFailedJobs: (repo: string, runId: number) => ipcRenderer.invoke('gh:rerunFailedJobs', repo, runId),
   applyPatchPR: (issueRepo: string, targetRepo: string, commands: string[]) => ipcRenderer.invoke('gh:applyPatchPR', issueRepo, targetRepo, commands),
   getRepoPermission: (repo: string) => ipcRenderer.invoke('gh:getRepoPermission', repo),
   getViewerLogin: () => ipcRenderer.invoke('gh:getViewerLogin'),
