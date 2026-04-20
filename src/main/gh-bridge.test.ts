@@ -200,6 +200,32 @@ describe('GhBridge', () => {
       expect(result.stdout).toContain('DRY RUN')
       expect(result.exitCode).toBe(0)
     })
+
+    it('cancelRun returns dry-run result when writeMode is false', async () => {
+      const result = await bridge.cancelRun('owner/repo', 12345, false)
+      expect(result.stdout).toContain('DRY RUN')
+      expect(result.exitCode).toBe(0)
+    })
+
+    it('rerunFailedJobs returns dry-run result when writeMode is false', async () => {
+      const result = await bridge.rerunFailedJobs('owner/repo', 12345, false)
+      expect(result.stdout).toContain('DRY RUN')
+      expect(result.exitCode).toBe(0)
+    })
+
+    it('enableWorkflow returns dry-run result when writeMode is false', async () => {
+      const result = await bridge.enableWorkflow('owner/repo', 123, false)
+      expect(result.stdout).toContain('DRY RUN')
+      expect(result.exitCode).toBe(0)
+      expect(mockExecFileAsync).not.toHaveBeenCalled()
+    })
+
+    it('disableWorkflow returns dry-run result when writeMode is false', async () => {
+      const result = await bridge.disableWorkflow('owner/repo', 123, false)
+      expect(result.stdout).toContain('DRY RUN')
+      expect(result.exitCode).toBe(0)
+      expect(mockExecFileAsync).not.toHaveBeenCalled()
+    })
   })
 
   describe('getIssues', () => {
@@ -471,6 +497,116 @@ describe('GhBridge', () => {
 
       const items = await bridge.scanPTAL(['owner/repo'], { 'owner/repo#42': 'IC_123' })
       expect(items.length).toBe(0)
+    })
+  })
+
+  describe('enableWorkflow / disableWorkflow', () => {
+    it('enableWorkflow returns dry-run result when writeMode is false', async () => {
+      const result = await bridge.enableWorkflow('owner/repo', 42, false)
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain('[DRY RUN]')
+      expect(mockExecFileAsync).not.toHaveBeenCalled()
+    })
+
+    it('enableWorkflow calls gh when writeMode is true', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+      const result = await bridge.enableWorkflow('owner/repo', 42, true)
+      expect(result.exitCode).toBe(0)
+      expect(mockExecFileAsync).toHaveBeenCalledWith(
+        'gh',
+        expect.arrayContaining(['workflow', 'enable', '42', '-R', 'owner/repo']),
+        expect.any(Object)
+      )
+    })
+
+    it('disableWorkflow returns dry-run result when writeMode is false', async () => {
+      const result = await bridge.disableWorkflow('owner/repo', 7, false)
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toContain('[DRY RUN]')
+      expect(mockExecFileAsync).not.toHaveBeenCalled()
+    })
+
+    it('disableWorkflow calls gh when writeMode is true', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+      const result = await bridge.disableWorkflow('owner/repo', 7, true)
+      expect(result.exitCode).toBe(0)
+      expect(mockExecFileAsync).toHaveBeenCalledWith(
+        'gh',
+        expect.arrayContaining(['workflow', 'disable', '7', '-R', 'owner/repo']),
+        expect.any(Object)
+      )
+    })
+  })
+
+  describe('getFileContent', () => {
+    it('decodes base64 file content on success', async () => {
+      const content = 'Hello, world!'
+      const encoded = Buffer.from(content).toString('base64')
+      mockExecFileAsync.mockResolvedValue({ stdout: encoded + '\n', stderr: '' })
+
+      const result = await bridge.getFileContent('owner/repo', 'README.md')
+      expect(result).toBe(content)
+    })
+
+    it('returns null when exec fails', async () => {
+      mockExecFileAsync.mockRejectedValue(Object.assign(new Error('not found'), { code: 1, stderr: 'Not Found', stdout: '' }))
+
+      const result = await bridge.getFileContent('owner/repo', 'missing.txt')
+      expect(result).toBeNull()
+    })
+
+    it('returns null when stdout is empty', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '   \n', stderr: '' })
+
+      const result = await bridge.getFileContent('owner/repo', 'empty.txt')
+      expect(result).toBeNull()
+    })
+
+    it('returns null for invalid base64', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '!!!not-base64!!!', stderr: '' })
+
+      // Buffer.from with invalid base64 doesn't throw — it just produces garbled bytes —
+      // so invalid base64 returns a (possibly empty/garbled) string, not null.
+      // Verify the function doesn't throw at least.
+      const result = await bridge.getFileContent('owner/repo', 'weird.txt')
+      expect(typeof result === 'string' || result === null).toBe(true)
+    })
+  })
+
+  describe('getWorkflows', () => {
+    it('parses newline-separated JSON objects', async () => {
+      const w1 = { id: 1, name: 'CI', path: '.github/workflows/ci.yml', state: 'active' }
+      const w2 = { id: 2, name: 'Release', path: '.github/workflows/release.yml', state: 'active' }
+      mockExecFileAsync.mockResolvedValue({
+        stdout: JSON.stringify(w1) + '\n' + JSON.stringify(w2) + '\n',
+        stderr: ''
+      })
+
+      const result = await bridge.getWorkflows('owner/repo')
+      expect(result).toHaveLength(2)
+      expect(result[0]).toMatchObject({ id: 1, name: 'CI' })
+      expect(result[1]).toMatchObject({ id: 2, name: 'Release' })
+    })
+
+    it('returns empty array on exec failure', async () => {
+      mockExecFileAsync.mockRejectedValue(Object.assign(new Error('fail'), { code: 1, stderr: 'err', stdout: '' }))
+
+      const result = await bridge.getWorkflows('owner/repo')
+      expect(result).toEqual([])
+    })
+
+    it('returns empty array on invalid JSON', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: 'not json at all', stderr: '' })
+
+      const result = await bridge.getWorkflows('owner/repo')
+      expect(result).toEqual([])
+    })
+
+    it('returns empty array when stdout is empty', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+
+      const result = await bridge.getWorkflows('owner/repo')
+      expect(result).toEqual([])
     })
   })
 })

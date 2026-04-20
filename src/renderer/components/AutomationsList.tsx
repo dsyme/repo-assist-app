@@ -235,7 +235,14 @@ export function AutomationsList({ repo, writeMode }: AutomationsListProps) {
           w.id === wf.id ? { ...w, state: isActive ? 'disabled_manually' : 'active' } : w
         ))
       }
-    } catch { /* ignore */ } finally {
+    } catch (err) {
+      await window.repoAssist.showMessageBox({
+        type: 'error',
+        message: `Failed to ${wf.state === 'active' ? 'disable' : 'enable'} workflow`,
+        detail: String(err),
+        buttons: ['OK'],
+      }).catch(() => {})
+    } finally {
       setTogglingWorkflow(null)
     }
   }, [repo, writeMode])
@@ -282,6 +289,7 @@ export function AutomationsList({ repo, writeMode }: AutomationsListProps) {
         runsLoading={runsLoading}
         sourceContent={sourceContent}
         sourceLoading={sourceLoading}
+        writeMode={writeMode}
         onBack={() => setSelectedWorkflow(null)}
         onViewInGitHub={() => openInGitHub(selectedWorkflow)}
         onEditInGitHub={() => openEditInGitHub(selectedWorkflow)}
@@ -420,11 +428,12 @@ export function AutomationsList({ repo, writeMode }: AutomationsListProps) {
 /** Separate component for workflow detail — avoids conditional hook calls */
 function AutomationDetail({
   workflow,
-  repo: _repo,
+  repo,
   runs,
   runsLoading,
   sourceContent,
   sourceLoading,
+  writeMode,
   onBack,
   onViewInGitHub,
   onEditInGitHub,
@@ -436,6 +445,7 @@ function AutomationDetail({
   runsLoading: boolean
   sourceContent: string | null
   sourceLoading: boolean
+  writeMode: boolean
   onBack: () => void
   onViewInGitHub: () => void
   onEditInGitHub: () => void
@@ -449,6 +459,35 @@ function AutomationDetail({
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [onBack])
+
+  const [busyRunAction, setBusyRunAction] = useState<number | null>(null)
+  const [runActionError, setRunActionError] = useState<string | null>(null)
+
+  const handleCancelRun = useCallback(async (e: React.MouseEvent, run: RepoRun) => {
+    e.stopPropagation()
+    setBusyRunAction(run.databaseId)
+    setRunActionError(null)
+    try {
+      await window.repoAssist.cancelRun(repo, run.databaseId)
+    } catch (err) {
+      setRunActionError(err instanceof Error ? err.message : 'Cancel failed')
+    } finally {
+      setBusyRunAction(null)
+    }
+  }, [repo])
+
+  const handleRerunFailed = useCallback(async (e: React.MouseEvent, run: RepoRun) => {
+    e.stopPropagation()
+    setBusyRunAction(run.databaseId)
+    setRunActionError(null)
+    try {
+      await window.repoAssist.rerunFailedJobs(repo, run.databaseId)
+    } catch (err) {
+      setRunActionError(err instanceof Error ? err.message : 'Rerun failed')
+    } finally {
+      setBusyRunAction(null)
+    }
+  }, [repo])
 
   const isMdContent = workflow.specPath != null
 
@@ -514,10 +553,16 @@ function AutomationDetail({
           {runsLoading && <Spinner size="small" />}
           {!runsLoading && <CounterLabel>{runs.length}</CounterLabel>}
         </h4>
+        {runActionError && (
+          <Text size="small" style={{ color: 'var(--fgColor-danger)', padding: '4px 0' }}>{runActionError}</Text>
+        )}
         {recentRuns.length > 0 && (
           <div className="automation-runs-list">
             {recentRuns.map(run => {
               const trigger = runTriggerDescription(run, workflow.agentic, slashCommand)
+              const isBusy = busyRunAction === run.databaseId
+              const isInProgress = run.status === 'in_progress' || run.status === 'queued' || run.status === 'waiting'
+              const isFailed = run.status === 'completed' && run.conclusion === 'failure'
               return (
                 <button
                   key={run.databaseId}
@@ -537,6 +582,30 @@ function AutomationDetail({
                     {run.conclusion || run.status}
                   </Label>
                   <RelativeTime date={new Date(run.createdAt)} />
+                  {isInProgress && (
+                    <Button
+                      size="small"
+                      variant="invisible"
+                      disabled={isBusy}
+                      onClick={(e) => handleCancelRun(e, run)}
+                      aria-label="Cancel run"
+                    >
+                      {isBusy ? <Spinner size="small" /> : <StopIcon size={14} />}
+                      {writeMode ? 'Cancel' : 'Cancel (dry-run)'}
+                    </Button>
+                  )}
+                  {isFailed && (
+                    <Button
+                      size="small"
+                      variant="invisible"
+                      disabled={isBusy}
+                      onClick={(e) => handleRerunFailed(e, run)}
+                      aria-label="Re-run failed jobs"
+                    >
+                      {isBusy ? <Spinner size="small" /> : <SyncIcon size={14} />}
+                      {writeMode ? 'Rerun failed' : 'Rerun failed (dry-run)'}
+                    </Button>
+                  )}
                 </button>
               )
             })}

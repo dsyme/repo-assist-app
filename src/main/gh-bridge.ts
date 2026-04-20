@@ -283,6 +283,12 @@ export class GhBridge {
     return this.execWriteOrDryRun(command, writeMode, '[DRY RUN] PR would be approved')
   }
 
+  /** Request a review from a GitHub user on a PR */
+  async requestReview(repo: string, number: number, reviewer: string, writeMode: boolean): Promise<GhExecResult> {
+    const command = `pr edit ${number} -R ${repo} --add-reviewer ${reviewer}`
+    return this.execWriteOrDryRun(command, writeMode, `[DRY RUN] Review would be requested from ${reviewer}`)
+  }
+
   async getPRDiff(repo: string, number: number): Promise<string> {
     const result = await this.exec(
       `pr diff ${number} -R ${repo}`
@@ -346,7 +352,39 @@ export class GhBridge {
     return this.execWriteOrDryRun(command, writeMode, '[DRY RUN] Issue would be closed')
   }
 
+  async cancelRun(repo: string, runId: number, writeMode: boolean): Promise<GhExecResult> {
+    const command = `run cancel ${runId} -R ${repo}`
+    return this.execWriteOrDryRun(command, writeMode, '[DRY RUN] Run would be cancelled')
+  }
+
+  async rerunFailedJobs(repo: string, runId: number, writeMode: boolean): Promise<GhExecResult> {
+    const command = `run rerun ${runId} -R ${repo} --failed`
+    return this.execWriteOrDryRun(command, writeMode, '[DRY RUN] Failed jobs would be re-run')
+  }
+
   async searchRepos(query: string): Promise<unknown[]> {
+    // If the query looks like "owner/repo", try fetching it directly first (handles forks
+    // which are excluded from GitHub search results)
+    if (/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(query.trim())) {
+      const direct = await this.exec(
+        `api repos/${query.trim()} --jq '{fullName: .full_name, description: .description}'`
+      )
+      if (direct.exitCode === 0 && direct.stdout.trim()) {
+        try {
+          const repo = JSON.parse(direct.stdout) as { fullName: string; description: string }
+          // Also run a search to supplement with related results
+          const searchResult = await this.exec(
+            `search repos "${query}" --json fullName,description,updatedAt --limit 9`
+          )
+          const searchRepos: { fullName: string; description: string }[] = searchResult.exitCode === 0
+            ? JSON.parse(searchResult.stdout).map((r: { fullName: string; description: string }) => ({ fullName: r.fullName, description: r.description }))
+            : []
+          // Prepend exact match, deduplicating
+          const rest = searchRepos.filter(r => r.fullName.toLowerCase() !== repo.fullName.toLowerCase())
+          return [repo, ...rest]
+        } catch { /* fall through to plain search */ }
+      }
+    }
     const result = await this.exec(
       `search repos "${query}" --json fullName,description,updatedAt --limit 10`
     )
