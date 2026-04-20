@@ -1,6 +1,16 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import type { PTALItem } from '../shared/types'
+import type {
+  PTALItem,
+  RepoIssue,
+  RepoPR,
+  RepoRun,
+  RepoWorkflow,
+  IssueDetail,
+  PRDetail,
+  PRCheck,
+  PRTimelineEvent,
+} from '../shared/types'
 
 const execFileAsync = promisify(execFile)
 
@@ -146,31 +156,31 @@ export class GhBridge {
     return result.exitCode === 0
   }
 
-  async getIssues(repo: string): Promise<unknown[]> {
+  async getIssues(repo: string): Promise<RepoIssue[]> {
     const result = await this.exec(
       `issue list -R ${repo} --json number,title,labels,author,createdAt,updatedAt,comments,state --limit 200 --state open`
     )
     if (result.exitCode !== 0) return []
     try {
-      return JSON.parse(result.stdout)
+      return JSON.parse(result.stdout) as RepoIssue[]
     } catch {
       return []
     }
   }
 
-  async getPRs(repo: string): Promise<unknown[]> {
+  async getPRs(repo: string): Promise<RepoPR[]> {
     const result = await this.exec(
       `pr list -R ${repo} --json number,title,author,state,isDraft,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,latestReviews,createdAt,updatedAt,labels,headRefName,baseRefName --limit 50 --state open`
     )
     if (result.exitCode !== 0) return []
     try {
-      return JSON.parse(result.stdout)
+      return JSON.parse(result.stdout) as RepoPR[]
     } catch {
       return []
     }
   }
 
-  async getRuns(repo: string): Promise<unknown[]> {
+  async getRuns(repo: string): Promise<RepoRun[]> {
     // Fetch up to 500 non-cancelled, non-skipped runs via GitHub API
     // gh run list doesn't support excluding by conclusion, so we fetch more and filter
     const result = await this.exec(
@@ -178,7 +188,7 @@ export class GhBridge {
     )
     if (result.exitCode !== 0) return []
     try {
-      const all = JSON.parse(result.stdout) as { conclusion: string; status: string }[]
+      const all = JSON.parse(result.stdout) as RepoRun[]
       return all.filter(r =>
         r.conclusion !== 'cancelled' && r.conclusion !== 'skipped' &&
         r.status !== 'cancelled' && r.status !== 'skipped'
@@ -188,52 +198,52 @@ export class GhBridge {
     }
   }
 
-  async getIssueDetail(repo: string, number: number): Promise<unknown | null> {
+  async getIssueDetail(repo: string, number: number): Promise<IssueDetail | null> {
     const result = await this.exec(
       `issue view ${number} -R ${repo} --json number,title,body,comments,labels,author,createdAt,updatedAt,state`
     )
     if (result.exitCode !== 0) return null
     try {
-      return JSON.parse(result.stdout)
+      return JSON.parse(result.stdout) as IssueDetail
     } catch {
       return null
     }
   }
 
-  async getPRDetail(repo: string, number: number): Promise<unknown | null> {
+  async getPRDetail(repo: string, number: number): Promise<PRDetail | null> {
     const result = await this.exec(
       `pr view ${number} -R ${repo} --json number,title,body,comments,reviews,files,additions,deletions,statusCheckRollup,state,isDraft,reviewDecision,mergeable,mergeStateStatus,labels,author,createdAt,updatedAt,headRefName,commits`
     )
     if (result.exitCode !== 0) return null
     try {
-      return JSON.parse(result.stdout)
+      return JSON.parse(result.stdout) as PRDetail
     } catch {
       return null
     }
   }
 
-  async getPRChecks(repo: string, number: number): Promise<unknown[]> {
+  async getPRChecks(repo: string, number: number): Promise<PRCheck[]> {
     const result = await this.exec(
       `pr view ${number} -R ${repo} --json statusCheckRollup`
     )
     if (result.exitCode !== 0) return []
     try {
-      const data = JSON.parse(result.stdout)
+      const data = JSON.parse(result.stdout) as { statusCheckRollup?: PRCheck[] }
       return data.statusCheckRollup ?? []
     } catch {
       return []
     }
   }
 
-  async getPRTimeline(repo: string, number: number): Promise<unknown[]> {
+  async getPRTimeline(repo: string, number: number): Promise<PRTimelineEvent[]> {
     const result = await this.exec(
       `api repos/${repo}/issues/${number}/timeline --paginate`
     )
     if (result.exitCode !== 0) return []
     try {
-      const events = JSON.parse(result.stdout)
+      const events = JSON.parse(result.stdout) as PRTimelineEvent[]
       // Filter to timeline-relevant events
-      return events.filter((e: { event?: string }) =>
+      return events.filter((e) =>
         ['committed', 'commented', 'head_ref_force_pushed', 'ready_for_review',
          'closed', 'merged', 'reopened', 'convert_to_draft', 'review_requested',
          'reviewed', 'labeled'].includes(e.event ?? '')
@@ -311,14 +321,14 @@ export class GhBridge {
     }
   }
 
-  async getWorkflows(repo: string): Promise<unknown[]> {
+  async getWorkflows(repo: string): Promise<RepoWorkflow[]> {
     const result = await this.exec(
       `api repos/${repo}/actions/workflows --jq '.workflows[] | {id, name, path, state}' --paginate`
     )
     if (result.exitCode !== 0) return []
     try {
       const lines = result.stdout.trim().split('\n').filter(Boolean)
-      return lines.map(line => JSON.parse(line))
+      return lines.map(line => JSON.parse(line) as RepoWorkflow)
     } catch {
       return []
     }
