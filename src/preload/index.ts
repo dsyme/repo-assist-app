@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('repoAssist', {
   addComment: (repo: string, number: number, body: string) => ipcRenderer.invoke('gh:addComment', repo, number, body),
   mergePR: (repo: string, number: number, bypass?: boolean) => ipcRenderer.invoke('gh:mergePR', repo, number, bypass ?? false),
   approvePR: (repo: string, number: number) => ipcRenderer.invoke('gh:approvePR', repo, number),
+  requestReview: (repo: string, number: number, reviewer: string) => ipcRenderer.invoke('gh:requestReview', repo, number, reviewer),
   openExternal: (url: string) => ipcRenderer.invoke('app:openExternal', url),
 
   // Local state

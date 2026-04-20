@@ -283,6 +283,12 @@ export class GhBridge {
     return this.execWriteOrDryRun(command, writeMode, '[DRY RUN] PR would be approved')
   }
 
+  /** Request a review from a GitHub user on a PR */
+  async requestReview(repo: string, number: number, reviewer: string, writeMode: boolean): Promise<GhExecResult> {
+    const command = `pr edit ${number} -R ${repo} --add-reviewer ${reviewer}`
+    return this.execWriteOrDryRun(command, writeMode, `[DRY RUN] Review would be requested from ${reviewer}`)
+  }
+
   async getPRDiff(repo: string, number: number): Promise<string> {
     const result = await this.exec(
       `pr diff ${number} -R ${repo}`

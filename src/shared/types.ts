@@ -195,6 +195,7 @@ export interface RepoAssistAPI {
   addComment: (repo: string, number: number, body: string) => Promise<unknown>
   mergePR: (repo: string, number: number, bypass?: boolean) => Promise<unknown>
   approvePR: (repo: string, number: number) => Promise<unknown>
+  requestReview: (repo: string, number: number, reviewer: string) => Promise<unknown>
   openExternal: (url: string) => Promise<void>
   getReadState: () => Promise<Record<string, string>>
   markRead: (key: string) => Promise<void>

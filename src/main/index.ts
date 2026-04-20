@@ -547,6 +547,15 @@ ipcHandle('gh:approvePR', async (repo: unknown, number: unknown) => {
   return result
 })
 
+ipcHandle('gh:requestReview', async (repo: unknown, number: unknown, reviewer: unknown) => {
+  const writeMode = localState.getWriteMode()
+  const result = await ghBridge.requestReview(repo as string, number as number, reviewer as string, writeMode)
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr || `Request review failed (exit code ${result.exitCode})`)
+  }
+  return result
+})
+
 // Local state
 ipcHandle('state:getReadState', async () => {
   return localState.getReadState()
