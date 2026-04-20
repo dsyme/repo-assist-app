@@ -215,6 +215,8 @@ describe('GhBridge', () => {
 
     it('removeLabel returns dry-run result when writeMode is false', async () => {
       const result = await bridge.removeLabel('owner/repo', 42, 'pr', 'enhancement', false)
+      expect(result.stdout).toContain('DRY RUN')
+      expect(result.exitCode).toBe(0)
     })
 
     it('rerunFailedJobs returns dry-run result when writeMode is false', async () => {
