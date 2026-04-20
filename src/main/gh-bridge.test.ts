@@ -723,7 +723,8 @@ describe('GhBridge', () => {
       const call = mockExecFileAsync.mock.calls[0]
       const args: string[] = call[1] as string[]
       expect(args.join(' ')).toContain('--paginate')
-      expect(args.join(' ')).toContain("--jq '.[]'")
+      expect(args).toContain('--jq')
+      expect(args).toContain('.[]')
     })
   })
 
