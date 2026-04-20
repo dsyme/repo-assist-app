@@ -309,6 +309,24 @@ ipcHandle('gh:closeIssue', async (repo: unknown, number: unknown, reason: unknow
   return result
 })
 
+ipcHandle('gh:cancelRun', async (repo: unknown, runId: unknown) => {
+  const writeMode = localState.getWriteMode()
+  const result = await ghBridge.cancelRun(repo as string, runId as number, writeMode)
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr || `Cancel failed (exit code ${result.exitCode})`)
+  }
+  return result
+})
+
+ipcHandle('gh:rerunFailedJobs', async (repo: unknown, runId: unknown) => {
+  const writeMode = localState.getWriteMode()
+  const result = await ghBridge.rerunFailedJobs(repo as string, runId as number, writeMode)
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr || `Rerun failed (exit code ${result.exitCode})`)
+  }
+  return result
+})
+
 ipcHandle('gh:getRepoPermission', async (repo: unknown) => {
   return ghBridge.getRepoPermission(repo as string)
 })
