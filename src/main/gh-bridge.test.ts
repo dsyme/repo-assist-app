@@ -189,6 +189,13 @@ describe('GhBridge', () => {
       expect(result.exitCode).toBe(0)
     })
 
+    it('reopenIssue returns dry-run result when writeMode is false', async () => {
+      const result = await bridge.reopenIssue('owner/repo', 1, false)
+      expect(result.stdout).toContain('DRY RUN')
+      expect(result.exitCode).toBe(0)
+      expect(mockExecFileAsync).not.toHaveBeenCalled()
+    })
+
     it('addComment returns dry-run result when writeMode is false', async () => {
       const result = await bridge.addComment('owner/repo', 1, 'test comment', false)
       expect(result.stdout).toContain('DRY RUN')

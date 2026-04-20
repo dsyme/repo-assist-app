@@ -168,6 +168,7 @@ export interface RepoAssistAPI {
   updatePRBranch: (repo: string, number: number) => Promise<unknown>
   getFileContent: (repo: string, path: string) => Promise<string | null>
   closeIssue: (repo: string, number: number, reason: string) => Promise<unknown>
+  reopenIssue: (repo: string, number: number) => Promise<unknown>
   closePR: (repo: string, number: number) => Promise<unknown>
   cancelRun: (repo: string, runId: number) => Promise<unknown>
   rerunFailedJobs: (repo: string, runId: number) => Promise<unknown>

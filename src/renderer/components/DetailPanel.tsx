@@ -375,6 +375,35 @@ export function DetailPanel({ type, repo, number, writeMode, onClose, onMerged, 
     }
   }
 
+  const handleReopenIssue = async () => {
+    setBusyAction('reopen')
+    if (issueDetail) {
+      setIssueDetail(prev => prev ? { ...prev, state: 'OPEN' } : prev)
+    }
+    setActionStatus('Reopening issue…')
+    try {
+      await window.repoAssist.reopenIssue(repo, number)
+      if (!writeMode) {
+        setActionStatus('Reopen logged (dry-run, read-only mode)')
+        setBusyAction(null)
+        setTimeout(() => setActionStatus(null), 3000)
+        return
+      }
+      setActionStatus('Issue reopened ✓')
+      setBusyAction(null)
+      const fresh = await window.repoAssist.getIssueDetail(repo, number)
+      setIssueDetail(fresh)
+      setTimeout(() => setActionStatus(null), 3000)
+    } catch (err) {
+      if (issueDetail) {
+        setIssueDetail(prev => prev ? { ...prev, state: 'CLOSED' } : prev)
+      }
+      setBusyAction(null)
+      setActionStatus(`Failed: ${err}`)
+      setTimeout(() => setActionStatus(null), 3000)
+    }
+  }
+
   const handleCloseIssue = async (reason: 'completed' | 'not_planned') => {
     const reasonLabel = reason === 'not_planned' ? 'not planned' : 'completed'
     setBusyAction(reason === 'not_planned' ? 'close-not-planned' : 'close-completed')
@@ -645,6 +674,11 @@ export function DetailPanel({ type, repo, number, writeMode, onClose, onMerged, 
                 {busyAction === 'close-not-planned' ? <><Spinner size="small" /> Closing…</> : (writeMode ? 'Close (not planned)' : 'Close (not planned, dry-run)')}
               </Button>
             </>
+          )}
+          {(issueDetail.state === 'CLOSED' || issueDetail.state === 'closed') && (
+            <Button size="small" variant="primary" onClick={handleReopenIssue} disabled={!!busyAction}>
+              {busyAction === 'reopen' ? <><Spinner size="small" /> Reopening…</> : (writeMode ? 'Reopen Issue' : 'Reopen Issue (dry-run)')}
+            </Button>
           )}
           {patchInstructions && (
             <Button size="small" variant="primary" leadingVisual={GitPullRequestIcon} onClick={handleApplyPatch}>

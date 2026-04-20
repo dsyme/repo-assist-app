@@ -363,6 +363,11 @@ export class GhBridge {
     return this.execWriteOrDryRun(command, writeMode, '[DRY RUN] Issue would be closed')
   }
 
+  async reopenIssue(repo: string, number: number, writeMode: boolean): Promise<GhExecResult> {
+    const command = `issue reopen ${number} -R ${repo}`
+    return this.execWriteOrDryRun(command, writeMode, '[DRY RUN] Issue would be reopened')
+  }
+
   async cancelRun(repo: string, runId: number, writeMode: boolean): Promise<GhExecResult> {
     const command = `run cancel ${runId} -R ${repo}`
     return this.execWriteOrDryRun(command, writeMode, '[DRY RUN] Run would be cancelled')
