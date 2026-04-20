@@ -2,47 +2,53 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 
-const STATE_DIR = path.join(os.homedir(), '.repo-assist')
-const READ_STATE_FILE = path.join(STATE_DIR, 'read-state.json')
-const RECAP_CACHE_FILE = path.join(STATE_DIR, 'recap-cache.json')
-const SETTINGS_FILE = path.join(STATE_DIR, 'settings.json')
-const PTAL_CLEARED_FILE = path.join(STATE_DIR, 'ptal-cleared.json')
-const PTAL_CACHE_FILE = path.join(STATE_DIR, 'ptal-cache.json')
-
-function ensureDir(): void {
-  if (!fs.existsSync(STATE_DIR)) {
-    fs.mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
-  }
-}
-
-function readJson(filePath: string): Record<string, unknown> {
-  try {
-    const data = fs.readFileSync(filePath, 'utf-8')
-    return JSON.parse(data)
-  } catch {
-    return {}
-  }
-}
-
-function writeJson(filePath: string, data: unknown): void {
-  ensureDir()
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), { mode: 0o600 })
-}
-
 export class LocalState {
-  constructor() {
-    ensureDir()
+  private readonly stateDir: string
+  private readonly readStateFile: string
+  private readonly recapCacheFile: string
+  private readonly settingsFile: string
+  private readonly ptalClearedFile: string
+  private readonly ptalCacheFile: string
+
+  constructor(stateDir?: string) {
+    this.stateDir = stateDir ?? path.join(os.homedir(), '.repo-assist')
+    this.readStateFile = path.join(this.stateDir, 'read-state.json')
+    this.recapCacheFile = path.join(this.stateDir, 'recap-cache.json')
+    this.settingsFile = path.join(this.stateDir, 'settings.json')
+    this.ptalClearedFile = path.join(this.stateDir, 'ptal-cleared.json')
+    this.ptalCacheFile = path.join(this.stateDir, 'ptal-cache.json')
+    this.ensureDir()
+  }
+
+  private ensureDir(): void {
+    if (!fs.existsSync(this.stateDir)) {
+      fs.mkdirSync(this.stateDir, { recursive: true, mode: 0o700 })
+    }
+  }
+
+  private readJson(filePath: string): Record<string, unknown> {
+    try {
+      const data = fs.readFileSync(filePath, 'utf-8')
+      return JSON.parse(data)
+    } catch {
+      return {}
+    }
+  }
+
+  private writeJson(filePath: string, data: unknown): void {
+    this.ensureDir()
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), { mode: 0o600 })
   }
 
   // Read state: tracks which issues/PRs the user has viewed
   getReadState(): Record<string, string> {
-    return readJson(READ_STATE_FILE) as Record<string, string>
+    return this.readJson(this.readStateFile) as Record<string, string>
   }
 
   markRead(key: string): void {
     const state = this.getReadState()
     state[key] = new Date().toISOString()
-    writeJson(READ_STATE_FILE, state)
+    this.writeJson(this.readStateFile, state)
   }
 
   isUnread(key: string, updatedAt: string): boolean {
@@ -54,121 +60,121 @@ export class LocalState {
 
   // Recap cache (keyed: '__all__' for global, repo name for per-repo)
   getRecapCache(key: string): unknown | null {
-    const data = readJson(RECAP_CACHE_FILE)
+    const data = this.readJson(this.recapCacheFile)
     const entry = data[key] as Record<string, unknown> | undefined
     if (entry?.markdown) return entry
     return null
   }
 
   setRecapCache(key: string, value: unknown): void {
-    const data = readJson(RECAP_CACHE_FILE)
+    const data = this.readJson(this.recapCacheFile)
     data[key] = value
-    writeJson(RECAP_CACHE_FILE, data)
+    this.writeJson(this.recapCacheFile, data)
   }
 
   clearRecap(key?: string): void {
     if (key) {
-      const data = readJson(RECAP_CACHE_FILE)
+      const data = this.readJson(this.recapCacheFile)
       delete data[key]
       // Store the cleared-at timestamp for this key
       data[`${key}__clearedAt`] = new Date().toISOString()
-      writeJson(RECAP_CACHE_FILE, data)
+      this.writeJson(this.recapCacheFile, data)
     } else {
       // Store a global cleared-at timestamp
-      writeJson(RECAP_CACHE_FILE, { '__all____clearedAt': new Date().toISOString() })
+      this.writeJson(this.recapCacheFile, { '__all____clearedAt': new Date().toISOString() })
     }
   }
 
   getRecapClearedAt(key: string): string | null {
-    const data = readJson(RECAP_CACHE_FILE)
+    const data = this.readJson(this.recapCacheFile)
     const ts = data[`${key}__clearedAt`]
     return typeof ts === 'string' ? ts : null
   }
 
   // Write mode
   getWriteMode(): boolean {
-    const settings = readJson(SETTINGS_FILE)
+    const settings = this.readJson(this.settingsFile)
     return settings.writeMode === true
   }
 
   setWriteMode(enabled: boolean): void {
-    const settings = readJson(SETTINGS_FILE)
+    const settings = this.readJson(this.settingsFile)
     settings.writeMode = enabled
-    writeJson(SETTINGS_FILE, settings)
+    this.writeJson(this.settingsFile, settings)
   }
 
   // Generic settings access
   getSettings(): Record<string, unknown> {
-    return readJson(SETTINGS_FILE)
+    return this.readJson(this.settingsFile)
   }
 
   setSetting(key: string, value: unknown): void {
-    const settings = readJson(SETTINGS_FILE)
+    const settings = this.readJson(this.settingsFile)
     settings[key] = value
-    writeJson(SETTINGS_FILE, settings)
+    this.writeJson(this.settingsFile, settings)
   }
 
   // Custom repos
   getCustomRepos(): string[] {
-    const settings = readJson(SETTINGS_FILE)
+    const settings = this.readJson(this.settingsFile)
     return Array.isArray(settings.customRepos) ? settings.customRepos as string[] : []
   }
 
   addRepo(repo: string): void {
-    const settings = readJson(SETTINGS_FILE)
+    const settings = this.readJson(this.settingsFile)
     const repos = Array.isArray(settings.customRepos) ? settings.customRepos as string[] : []
     if (!repos.includes(repo)) {
       repos.push(repo)
       settings.customRepos = repos
-      writeJson(SETTINGS_FILE, settings)
+      this.writeJson(this.settingsFile, settings)
     }
   }
 
   removeRepo(repo: string): void {
-    const settings = readJson(SETTINGS_FILE)
+    const settings = this.readJson(this.settingsFile)
     const repos = Array.isArray(settings.customRepos) ? settings.customRepos as string[] : []
     settings.customRepos = repos.filter(r => r !== repo)
-    writeJson(SETTINGS_FILE, settings)
+    this.writeJson(this.settingsFile, settings)
   }
 
   // PTAL cleared state: { "owner/repo#123": "IC_abc123" }
   getPTALCleared(): Record<string, string> {
-    return readJson(PTAL_CLEARED_FILE) as Record<string, string>
+    return this.readJson(this.ptalClearedFile) as Record<string, string>
   }
 
   clearPTALItem(key: string, activityId: string): void {
     const state = this.getPTALCleared()
     state[key] = activityId
-    writeJson(PTAL_CLEARED_FILE, state)
+    this.writeJson(this.ptalClearedFile, state)
   }
 
   // PTAL cache: cached scan results for fast startup
   getPTALCache(): unknown[] {
-    const data = readJson(PTAL_CACHE_FILE)
+    const data = this.readJson(this.ptalCacheFile)
     return Array.isArray(data.items) ? data.items : []
   }
 
   setPTALCache(items: unknown[]): void {
-    writeJson(PTAL_CACHE_FILE, { items, cachedAt: new Date().toISOString() })
+    this.writeJson(this.ptalCacheFile, { items, cachedAt: new Date().toISOString() })
   }
 
   // Repo storage preference: 'remote' | 'local' | null (never asked)
   getRepoStoragePreference(): 'remote' | 'local' | null {
-    const settings = readJson(SETTINGS_FILE)
+    const settings = this.readJson(this.settingsFile)
     const pref = settings.repoStoragePreference
     if (pref === 'remote' || pref === 'local') return pref
     return null
   }
 
   setRepoStoragePreference(pref: 'remote' | 'local'): void {
-    const settings = readJson(SETTINGS_FILE)
+    const settings = this.readJson(this.settingsFile)
     settings.repoStoragePreference = pref
-    writeJson(SETTINGS_FILE, settings)
+    this.writeJson(this.settingsFile, settings)
   }
 
   /** Seed the local repo list with defaults if it's empty and has never been customized */
   seedDefaultReposIfEmpty(): void {
-    const settings = readJson(SETTINGS_FILE)
+    const settings = this.readJson(this.settingsFile)
     if (!Array.isArray(settings.customRepos) || settings.customRepos.length === 0) {
       settings.customRepos = [
         'fslaborg/Deedle',
@@ -176,14 +182,14 @@ export class LocalState {
         'fsprojects/FSharp.Data',
         'fsprojects/FSharp.Control.TaskSeq'
       ]
-      writeJson(SETTINGS_FILE, settings)
+      this.writeJson(this.settingsFile, settings)
     }
   }
 
   /** Replace the full local repo list (used when syncing from remote) */
   setLocalRepos(repos: string[]): void {
-    const settings = readJson(SETTINGS_FILE)
+    const settings = this.readJson(this.settingsFile)
     settings.customRepos = repos
-    writeJson(SETTINGS_FILE, settings)
+    this.writeJson(this.settingsFile, settings)
   }
 }

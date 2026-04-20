@@ -23,7 +23,7 @@ afterEach(() => {
 
 async function loadLocalState() {
   const mod = await import('./local-state')
-  return new mod.LocalState()
+  return new mod.LocalState(path.join(tmpHome, '.repo-assist'))
 }
 
 describe('LocalState', () => {
