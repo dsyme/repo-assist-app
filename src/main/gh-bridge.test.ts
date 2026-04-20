@@ -249,6 +249,13 @@ describe('GhBridge', () => {
       expect(result.exitCode).toBe(0)
     })
 
+    it('requestReview returns dry-run result when writeMode is false', async () => {
+      const result = await bridge.requestReview('owner/repo', 7, 'octocat', false)
+      expect(result.stdout).toContain('DRY RUN')
+      expect(result.exitCode).toBe(0)
+      expect(mockExecFileAsync).not.toHaveBeenCalled()
+    })
+
     it('enableWorkflow returns dry-run result when writeMode is false', async () => {
       const result = await bridge.enableWorkflow('owner/repo', 123, false)
       expect(result.stdout).toContain('DRY RUN')
@@ -660,6 +667,37 @@ describe('GhBridge', () => {
 
       const result = await bridge.getWorkflows('owner/repo')
       expect(result).toEqual([])
+    })
+  })
+
+  describe('requestReview', () => {
+    it('returns dry-run result when writeMode is false', async () => {
+      const result = await bridge.requestReview('owner/repo', 7, 'octocat', false)
+      expect(result.stdout).toContain('DRY RUN')
+      expect(result.exitCode).toBe(0)
+      expect(mockExecFileAsync).not.toHaveBeenCalled()
+    })
+
+    it('calls gh pr edit --add-reviewer when writeMode is true', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+
+      await bridge.requestReview('owner/repo', 7, 'octocat', true)
+      const call = mockExecFileAsync.mock.calls[0]
+      const args: string[] = call[1] as string[]
+      expect(args).toContain('edit')
+      expect(args).toContain('7')
+      expect(args).toContain('--add-reviewer')
+      expect(args).toContain('octocat')
+    })
+
+    it('includes repo flag in command', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+
+      await bridge.requestReview('owner/repo', 3, 'reviewer1', true)
+      const call = mockExecFileAsync.mock.calls[0]
+      const args: string[] = call[1] as string[]
+      expect(args).toContain('-R')
+      expect(args).toContain('owner/repo')
     })
   })
 })
