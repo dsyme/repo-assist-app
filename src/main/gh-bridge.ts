@@ -237,12 +237,15 @@ export class GhBridge {
   }
 
   async getPRTimeline(repo: string, number: number): Promise<PRTimelineEvent[]> {
+    // Use --jq '.[]' to emit one JSON object per line across all pages,
+    // avoiding the concatenated-array output that --paginate produces without --jq.
     const result = await this.exec(
-      `api repos/${repo}/issues/${number}/timeline --paginate`
+      `api repos/${repo}/issues/${number}/timeline --paginate --jq '.[]'`
     )
     if (result.exitCode !== 0) return []
     try {
-      const events = JSON.parse(result.stdout) as PRTimelineEvent[]
+      const lines = result.stdout.trim().split('\n').filter(Boolean)
+      const events = lines.map(line => JSON.parse(line) as PRTimelineEvent)
       // Filter to timeline-relevant events
       return events.filter((e) =>
         ['committed', 'commented', 'head_ref_force_pushed', 'ready_for_review',

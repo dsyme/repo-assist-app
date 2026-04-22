@@ -670,6 +670,64 @@ describe('GhBridge', () => {
     })
   })
 
+  describe('getPRTimeline', () => {
+    it('parses newline-separated JSON objects and filters to relevant events', async () => {
+      const e1 = { event: 'committed', created_at: '2024-01-01T00:00:00Z', sha: 'abc123' }
+      const e2 = { event: 'commented', created_at: '2024-01-02T00:00:00Z', body: 'lgtm' }
+      const e3 = { event: 'subscribed', created_at: '2024-01-02T00:00:00Z' }
+      mockExecFileAsync.mockResolvedValue({
+        stdout: [e1, e2, e3].map(e => JSON.stringify(e)).join('\n') + '\n',
+        stderr: ''
+      })
+
+      const result = await bridge.getPRTimeline('owner/repo', 1)
+      expect(result).toHaveLength(2)
+      expect(result[0]).toMatchObject({ event: 'committed', sha: 'abc123' })
+      expect(result[1]).toMatchObject({ event: 'commented', body: 'lgtm' })
+    })
+
+    it('handles multi-page output (newline-separated objects across pages)', async () => {
+      // Simulate --paginate --jq '.[]': each event is a separate JSON line
+      const events = [
+        { event: 'committed', created_at: '2024-01-01T00:00:00Z' },
+        { event: 'reviewed', created_at: '2024-01-02T00:00:00Z' },
+        { event: 'merged', created_at: '2024-01-03T00:00:00Z' },
+      ]
+      mockExecFileAsync.mockResolvedValue({
+        stdout: events.map(e => JSON.stringify(e)).join('\n'),
+        stderr: ''
+      })
+
+      const result = await bridge.getPRTimeline('owner/repo', 42)
+      expect(result).toHaveLength(3)
+      expect(result.map(e => e.event)).toEqual(['committed', 'reviewed', 'merged'])
+    })
+
+    it('returns empty array on exec failure', async () => {
+      mockExecFileAsync.mockRejectedValue(Object.assign(new Error('fail'), { code: 1, stderr: 'err', stdout: '' }))
+
+      const result = await bridge.getPRTimeline('owner/repo', 1)
+      expect(result).toEqual([])
+    })
+
+    it('returns empty array when stdout is empty', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+
+      const result = await bridge.getPRTimeline('owner/repo', 1)
+      expect(result).toEqual([])
+    })
+
+    it('uses --paginate --jq .[] in the command', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+      await bridge.getPRTimeline('owner/repo', 5)
+      const call = mockExecFileAsync.mock.calls[0]
+      const args: string[] = call[1] as string[]
+      expect(args.join(' ')).toContain('--paginate')
+      expect(args).toContain('--jq')
+      expect(args).toContain('.[]')
+    })
+  })
+
   describe('requestReview', () => {
     it('returns dry-run result when writeMode is false', async () => {
       const result = await bridge.requestReview('owner/repo', 7, 'octocat', false)
