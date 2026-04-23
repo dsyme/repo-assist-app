@@ -918,14 +918,16 @@ ${sections.join('\n\n')}`
 
   /** Scan repos for open issues/PRs where the last activity was by an automation */
   async scanPTAL(repos: string[], clearedState: Record<string, string>): Promise<PTALItem[]> {
+    // Scan all repos in parallel to reduce total wall-clock time for multi-repo users
+    const results = await Promise.allSettled(
+      repos.map(repo => this.scanRepoPTAL(repo, clearedState))
+    )
     const allItems: PTALItem[] = []
-    for (const repo of repos) {
-      try {
-        const items = await this.scanRepoPTAL(repo, clearedState)
-        allItems.push(...items)
-      } catch {
-        // Skip repos that fail (permissions, etc)
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        allItems.push(...result.value)
       }
+      // rejected: skip repos that fail (permissions, network, etc)
     }
     // Sort by most recent activity first
     allItems.sort((a, b) => new Date(b.lastActivity.when).getTime() - new Date(a.lastActivity.when).getTime())

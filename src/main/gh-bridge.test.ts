@@ -558,6 +558,63 @@ describe('GhBridge', () => {
       const items = await bridge.scanPTAL(['owner/repo'], { 'owner/repo#42': 'IC_123' })
       expect(items.length).toBe(0)
     })
+
+    it('scans multiple repos in parallel and merges results sorted by date', async () => {
+      const makeIssueData = (number: number, botDate: string) => ({
+        data: {
+          repository: {
+            issues: {
+              nodes: [{
+                number,
+                title: `Issue ${number}`,
+                body: '',
+                author: { login: 'human' },
+                createdAt: '2024-01-01T00:00:00Z',
+                updatedAt: botDate,
+                comments: {
+                  nodes: [{
+                    id: `IC_${number}`,
+                    author: { login: 'github-actions[bot]' },
+                    body: 'Bot comment',
+                    createdAt: botDate,
+                  }]
+                },
+              }],
+              pageInfo: { hasNextPage: false, endCursor: '' },
+            },
+          },
+        },
+      })
+      const prData = { data: { repository: { pullRequests: { nodes: [], pageInfo: { hasNextPage: false, endCursor: '' } } } } }
+
+      // Repo1 has a newer bot comment; repo2 has an older one
+      const perRepoResponses: Record<string, [unknown, unknown]> = {
+        'owner/repo1': [makeIssueData(10, '2024-01-03T00:00:00Z'), prData],
+        'owner/repo2': [makeIssueData(20, '2024-01-02T00:00:00Z'), prData],
+      }
+      const callCount: Record<string, number> = {}
+      mockExecFileAsync.mockImplementation(async (_cmd: string, args: string[]) => {
+        // Identify which repo from the -F owner=... and name=... args
+        const ownerArg = args.find((_: string, i: number) => i > 0 && args[i - 1] === '-F' && args[i].startsWith('owner='))
+        const nameArg = args.find((_: string, i: number) => i > 0 && args[i - 1] === '-F' && args[i].startsWith('name='))
+        const owner = ownerArg?.split('=')[1] ?? 'unknown'
+        const name = nameArg?.split('=')[1] ?? 'unknown'
+        const repoKey = `${owner}/${name}`
+        callCount[repoKey] = (callCount[repoKey] ?? 0) + 1
+        const responses = perRepoResponses[repoKey]
+        const data = responses ? responses[(callCount[repoKey] - 1) % 2] : prData
+        return { stdout: JSON.stringify(data), stderr: '' }
+      })
+
+      const items = await bridge.scanPTAL(['owner/repo1', 'owner/repo2'], {})
+      expect(items.length).toBe(2)
+      // Verify sorted newest-first
+      expect(items[0].lastActivity.when >= items[1].lastActivity.when).toBe(true)
+      // Verify both repos contributed
+      const repos = items.map(i => i.repo)
+      expect(repos).toContain('owner/repo1')
+      expect(repos).toContain('owner/repo2')
+    })
   })
 
   describe('enableWorkflow / disableWorkflow', () => {
