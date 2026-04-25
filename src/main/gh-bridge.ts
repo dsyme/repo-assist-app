@@ -11,6 +11,7 @@ import type {
   PRDetail,
   PRCheck,
   PRTimelineEvent,
+  RepoSearchResult,
 } from '../shared/types'
 
 const execFileAsync = promisify(execFile)
@@ -401,7 +402,7 @@ export class GhBridge {
     return this.execWriteOrDryRun(command, writeMode, '[DRY RUN] Failed jobs would be re-run')
   }
 
-  async searchRepos(query: string): Promise<unknown[]> {
+  async searchRepos(query: string): Promise<RepoSearchResult[]> {
     // If the query looks like "owner/repo", try fetching it directly first (handles forks
     // which are excluded from GitHub search results)
     if (/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(query.trim())) {
@@ -410,13 +411,13 @@ export class GhBridge {
       )
       if (direct.exitCode === 0 && direct.stdout.trim()) {
         try {
-          const repo = JSON.parse(direct.stdout) as { fullName: string; description: string }
+          const repo = JSON.parse(direct.stdout) as RepoSearchResult
           // Also run a search to supplement with related results
           const searchResult = await this.exec(
             `search repos "${query}" --json fullName,description,updatedAt --limit 9`
           )
-          const searchRepos: { fullName: string; description: string }[] = searchResult.exitCode === 0
-            ? JSON.parse(searchResult.stdout).map((r: { fullName: string; description: string }) => ({ fullName: r.fullName, description: r.description }))
+          const searchRepos: RepoSearchResult[] = searchResult.exitCode === 0
+            ? JSON.parse(searchResult.stdout).map((r: RepoSearchResult) => ({ fullName: r.fullName, description: r.description }))
             : []
           // Prepend exact match, deduplicating
           const rest = searchRepos.filter(r => r.fullName.toLowerCase() !== repo.fullName.toLowerCase())
@@ -435,7 +436,7 @@ export class GhBridge {
     }
   }
 
-  async getRecentRepos(): Promise<unknown[]> {
+  async getRecentRepos(): Promise<RepoSearchResult[]> {
     // Use the user's events to find repos they've actually been active in
     // Don't use --paginate as it outputs multiple JSON arrays that can't be parsed
     const result = await this.exec(
@@ -452,7 +453,7 @@ export class GhBridge {
           const info = await this.exec(`api repos/${fullName} --jq '{fullName: .full_name, description: .description}'`)
           if (info.exitCode !== 0) return { fullName, description: '' }
           try {
-            return JSON.parse(info.stdout) as { fullName: string; description: string }
+            return JSON.parse(info.stdout) as RepoSearchResult
           } catch {
             return { fullName, description: '' }
           }

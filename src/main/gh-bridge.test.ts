@@ -999,6 +999,87 @@ describe('GhBridge', () => {
     })
   })
 
+  describe('searchRepos', () => {
+    it('returns results from plain search when query is not owner/repo format', async () => {
+      const payload = [
+        { fullName: 'alice/my-tool', description: 'A tool' },
+        { fullName: 'bob/my-tool', description: 'Another tool' },
+      ]
+      mockExecFileAsync.mockResolvedValue({ stdout: JSON.stringify(payload), stderr: '' })
+
+      const results = await bridge.searchRepos('my-tool')
+      expect(results).toEqual(payload)
+    })
+
+    it('prepends exact owner/repo match and deduplicates from search results', async () => {
+      const directRepo = { fullName: 'alice/exact-repo', description: 'Direct' }
+      const searchPayload = [
+        { fullName: 'alice/exact-repo', description: 'Direct' },
+        { fullName: 'bob/other', description: 'Other' },
+      ]
+      mockExecFileAsync
+        .mockResolvedValueOnce({ stdout: JSON.stringify(directRepo), stderr: '' })
+        .mockResolvedValueOnce({ stdout: JSON.stringify(searchPayload), stderr: '' })
+
+      const results = await bridge.searchRepos('alice/exact-repo')
+      // exact match first, no duplicates
+      expect(results[0]).toEqual(directRepo)
+      expect(results.filter(r => r.fullName === 'alice/exact-repo')).toHaveLength(1)
+    })
+
+    it('falls back to plain search when direct fetch fails', async () => {
+      const searchPayload = [{ fullName: 'alice/exact-repo', description: 'Fallback' }]
+      mockExecFileAsync
+        .mockResolvedValueOnce({ stdout: '', stderr: 'not found' })
+        .mockResolvedValueOnce({ stdout: JSON.stringify(searchPayload), stderr: '' })
+
+      const results = await bridge.searchRepos('alice/exact-repo')
+      expect(results).toEqual(searchPayload)
+    })
+
+    it('returns empty array when exec fails', async () => {
+      mockExecFileAsync.mockRejectedValue(Object.assign(new Error('fail'), { code: 1, stdout: '', stderr: 'error' }))
+
+      const results = await bridge.searchRepos('nonexistent')
+      expect(results).toEqual([])
+    })
+  })
+
+  describe('getRecentRepos', () => {
+    it('returns repos fetched from user events', async () => {
+      const eventNames = 'alice/repo-a\nalice/repo-b\nalice/repo-a\n' // includes a duplicate
+      const repoA = { fullName: 'alice/repo-a', description: 'Repo A' }
+      const repoB = { fullName: 'alice/repo-b', description: 'Repo B' }
+      mockExecFileAsync
+        .mockResolvedValueOnce({ stdout: eventNames, stderr: '' })
+        .mockResolvedValueOnce({ stdout: JSON.stringify(repoA), stderr: '' })
+        .mockResolvedValueOnce({ stdout: JSON.stringify(repoB), stderr: '' })
+
+      const results = await bridge.getRecentRepos()
+      expect(results).toHaveLength(2) // deduped
+      expect(results[0]).toEqual(repoA)
+      expect(results[1]).toEqual(repoB)
+    })
+
+    it('returns empty array when events fetch fails', async () => {
+      mockExecFileAsync.mockRejectedValue(Object.assign(new Error('fail'), { code: 1, stdout: '', stderr: 'error' }))
+
+      const results = await bridge.getRecentRepos()
+      expect(results).toEqual([])
+    })
+
+    it('uses empty description when repo info fetch fails', async () => {
+      mockExecFileAsync
+        .mockResolvedValueOnce({ stdout: 'alice/broken-repo\n', stderr: '' })
+        .mockRejectedValueOnce(Object.assign(new Error('fail'), { code: 1, stdout: '', stderr: 'error' }))
+
+      const results = await bridge.getRecentRepos()
+      expect(results).toHaveLength(1)
+      expect(results[0].fullName).toBe('alice/broken-repo')
+      expect(results[0].description).toBe('')
+    })
+  })
+
   describe('mergePR', () => {
     it('returns dry-run result when writeMode is false', async () => {
       const result = await bridge.mergePR('owner/repo', 1, false)
