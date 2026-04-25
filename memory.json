@@ -1,11 +1,11 @@
 {
-  "last_run": "2026-04-24T06:21:31Z",
-  "run_id": "24875412776",
+  "last_run": "2026-04-25T06:00:00Z",
+  "run_id": "24924129510",
   "comments_made": {},
   "issues_commented": [],
   "fix_attempts": [],
   "improvement_prs": [
-    {"branch": "repo-assist/eng-patch-deps-2026-04-24", "pr": 55, "status": "open", "note": "chore(deps): update @primer/primitives 11.7.0→11.7.1, styled-components 6.4.0→6.4.1. Created 2026-04-24. 152 tests passing."}
+    {"branch": "repo-assist/improve-repo-search-types", "pr": null, "status": "open", "note": "refactor(types): add RepoSearchResult type, fix unknown[] on searchRepos/getRecentRepos, add 7 tests. Created 2026-04-25."}
   ],
   "closed_prs": [],
   "garbage_prs": [],
@@ -32,8 +32,9 @@
   ],
   "monthly_activity_issue": 5,
   "open_issues": [
-    {"number": 53, "title": "ci: upgrade Node.js from 20 to 22 (blocked - workflow permissions)", "note": "Issue #53 contains manual instructions for Node22 upgrade. Cannot be automated due to workflow file restrictions."}
+    {"number": 53, "title": "ci: upgrade Node.js from 20 to 22 (blocked - workflow permissions)", "note": "Issue #53 contains manual instructions for Node22 upgrade. Cannot be automated due to workflow file restrictions."},
+    {"number": 55, "title": "Blocked deps PR issue: @primer/primitives 11.7.0→11.7.1 + styled-components 6.4.0→6.4.1", "note": "Issue #55 is a fallback issue (not PR) - protected files blocked PR creation. Has a link to create PR manually."}
   ],
   "stale_issues_to_close": [],
-  "notes": "PR #55 (patch-deps) created 2026-04-24: updates @primer/primitives 11.7.0→11.7.1 and styled-components 6.4.0→6.4.1. PRs #52 and #54 merged by maintainer on 2026-04-23. Future work: add tests for enrichIssueRefs (unexported), getRecentRepos, searchRepos. Major updates available: marked 17→18, vite 7→8 (deferred - major bumps need assessment)."
+  "notes": "PR (repo-assist/improve-repo-search-types) created 2026-04-25: adds RepoSearchResult type, fixes unknown[] return types on searchRepos/getRecentRepos, adds 7 tests. Issue #55 is a fallback issue (not PR) for deps update. Major updates available: marked 17→18, vite 7→8 (deferred - major bumps need assessment). Continue adding tests for remaining untested GhBridge methods."
 }
