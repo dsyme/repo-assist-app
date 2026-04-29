@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { parseGhArgs, isAutomationActor, stripCodeFences, extractAutomationName, GhBridge } from './gh-bridge'
+import { parseGhArgs, isAutomationActor, stripCodeFences, extractAutomationName, enrichIssueRefs, escapeHtml, GhBridge, type RefInfo } from './gh-bridge'
 
 // === Pure function tests (no mocking needed) ===
 
@@ -1045,5 +1045,218 @@ describe('GhBridge', () => {
       const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
       expect(args).toContain('--admin')
     })
+  })
+
+  describe('getPRTimeline', () => {
+    it('returns filtered timeline events on success', async () => {
+      const events = [
+        { event: 'committed', created_at: '2024-01-01T00:00:00Z', sha: 'abc123' },
+        { event: 'reviewed', created_at: '2024-01-02T00:00:00Z', body: 'LGTM' },
+        { event: 'referenced', created_at: '2024-01-02T00:00:00Z' }, // filtered out
+        { event: 'labeled', created_at: '2024-01-03T00:00:00Z' },
+      ]
+      mockExecFileAsync.mockResolvedValue({ stdout: events.map(e => JSON.stringify(e)).join('\n'), stderr: '' })
+
+      const result = await bridge.getPRTimeline('owner/repo', 1)
+      expect(result).toHaveLength(3)
+      expect(result.map(e => e.event)).toEqual(['committed', 'reviewed', 'labeled'])
+    })
+
+    it('returns empty array on exec failure', async () => {
+      mockExecFileAsync.mockRejectedValue(Object.assign(new Error('fail'), { code: 1, stderr: 'err', stdout: '' }))
+      expect(await bridge.getPRTimeline('owner/repo', 1)).toEqual([])
+    })
+
+    it('returns empty array on invalid JSON lines', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: 'not-json\nalso-not-json', stderr: '' })
+      expect(await bridge.getPRTimeline('owner/repo', 1)).toEqual([])
+    })
+
+    it('returns empty array when output is empty', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+      expect(await bridge.getPRTimeline('owner/repo', 1)).toEqual([])
+    })
+
+    it('uses --paginate and --jq .[] in the command', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+      await bridge.getPRTimeline('owner/repo', 5)
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('--paginate')
+      expect(args.some(a => a.includes('.[]'))).toBe(true)
+    })
+  })
+
+  describe('getWorkflows', () => {
+    it('parses NDJSON workflow output', async () => {
+      const workflows = [
+        { id: 1, name: 'CI', path: '.github/workflows/ci.yml', state: 'active' },
+        { id: 2, name: 'CD', path: '.github/workflows/cd.yml', state: 'disabled_manually' },
+      ]
+      mockExecFileAsync.mockResolvedValue({
+        stdout: workflows.map(w => JSON.stringify(w)).join('\n') + '\n',
+        stderr: '',
+      })
+
+      const result = await bridge.getWorkflows('owner/repo')
+      expect(result).toHaveLength(2)
+      expect(result[0].name).toBe('CI')
+      expect(result[1].state).toBe('disabled_manually')
+    })
+
+    it('returns empty array on exec failure', async () => {
+      mockExecFileAsync.mockRejectedValue(Object.assign(new Error('fail'), { code: 1, stderr: 'err', stdout: '' }))
+      expect(await bridge.getWorkflows('owner/repo')).toEqual([])
+    })
+
+    it('returns empty array on invalid JSON', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: 'bad-json-line', stderr: '' })
+      expect(await bridge.getWorkflows('owner/repo')).toEqual([])
+    })
+
+    it('uses --paginate and --jq in the command', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+      await bridge.getWorkflows('owner/repo')
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('--paginate')
+      expect(args.some(a => a.includes('--jq'))).toBe(true)
+    })
+  })
+
+  describe('getFileContent', () => {
+    it('decodes base64 content on success', async () => {
+      const content = 'Hello, World!'
+      const encoded = Buffer.from(content).toString('base64')
+      mockExecFileAsync.mockResolvedValue({ stdout: encoded + '\n', stderr: '' })
+
+      const result = await bridge.getFileContent('owner/repo', 'README.md')
+      expect(result).toBe(content)
+    })
+
+    it('handles base64 with embedded newlines (GitHub API format)', async () => {
+      const content = 'x'.repeat(200)
+      const encoded = Buffer.from(content).toString('base64')
+      // GitHub API embeds newlines every 76 chars in base64 content
+      const withNewlines = encoded.replace(/.{76}/g, '$&\n')
+      mockExecFileAsync.mockResolvedValue({ stdout: withNewlines, stderr: '' })
+
+      const result = await bridge.getFileContent('owner/repo', 'big-file.md')
+      expect(result).toBe(content)
+    })
+
+    it('returns null on exec failure', async () => {
+      mockExecFileAsync.mockRejectedValue(Object.assign(new Error('fail'), { code: 1, stderr: 'err', stdout: '' }))
+      expect(await bridge.getFileContent('owner/repo', 'MISSING.md')).toBeNull()
+    })
+
+    it('returns null when stdout is empty', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '   ', stderr: '' })
+      expect(await bridge.getFileContent('owner/repo', 'empty.md')).toBeNull()
+    })
+  })
+})
+
+// === Utility function tests ===
+
+describe('escapeHtml', () => {
+  it('escapes ampersand', () => {
+    expect(escapeHtml('a & b')).toBe('a &amp; b')
+  })
+
+  it('escapes angle brackets', () => {
+    expect(escapeHtml('<tag>')).toBe('&lt;tag&gt;')
+  })
+
+  it('escapes double quotes', () => {
+    expect(escapeHtml('"quoted"')).toBe('&quot;quoted&quot;')
+  })
+
+  it('leaves plain text unchanged', () => {
+    expect(escapeHtml('hello world')).toBe('hello world')
+  })
+
+  it('escapes all special chars together', () => {
+    expect(escapeHtml('<a href="x&y">')).toBe('&lt;a href=&quot;x&amp;y&quot;&gt;')
+  })
+})
+
+describe('enrichIssueRefs', () => {
+  it('enriches an open issue link', () => {
+    const refMap = new Map<string, RefInfo>([
+      ['owner/repo/issues/42', { title: 'Fix the bug', state: 'open', type: 'issue' }],
+    ])
+    const result = enrichIssueRefs('[#42](https://github.com/owner/repo/issues/42)', refMap)
+    expect(result).toContain('href="https://github.com/owner/repo/issues/42"')
+    expect(result).toContain('#42')
+    expect(result).toContain('Fix the bug')
+    expect(result).toContain('issue-open')
+  })
+
+  it('enriches a closed issue link', () => {
+    const refMap = new Map<string, RefInfo>([
+      ['owner/repo/issues/7', { title: 'Resolved', state: 'closed', type: 'issue' }],
+    ])
+    const result = enrichIssueRefs('[#7](https://github.com/owner/repo/issues/7)', refMap)
+    expect(result).toContain('issue-closed')
+  })
+
+  it('enriches a merged PR link', () => {
+    const refMap = new Map<string, RefInfo>([
+      ['owner/repo/pull/10', { title: 'Add feature', state: 'merged', type: 'pr' }],
+    ])
+    const result = enrichIssueRefs('[#10](https://github.com/owner/repo/pull/10)', refMap)
+    expect(result).toContain('pr-merged')
+    expect(result).toContain('Add feature')
+  })
+
+  it('enriches an open PR link', () => {
+    const refMap = new Map<string, RefInfo>([
+      ['owner/repo/pull/5', { title: 'Draft PR', state: 'open', type: 'pr' }],
+    ])
+    const result = enrichIssueRefs('[#5](https://github.com/owner/repo/pull/5)', refMap)
+    expect(result).toContain('pr-open')
+  })
+
+  it('enriches a closed PR link', () => {
+    const refMap = new Map<string, RefInfo>([
+      ['owner/repo/pull/3', { title: 'Abandoned', state: 'closed', type: 'pr' }],
+    ])
+    const result = enrichIssueRefs('[#3](https://github.com/owner/repo/pull/3)', refMap)
+    expect(result).toContain('pr-closed')
+  })
+
+  it('returns the original markdown link when not in refMap', () => {
+    const refMap = new Map<string, RefInfo>()
+    const md = '[#99](https://github.com/owner/repo/issues/99)'
+    expect(enrichIssueRefs(md, refMap)).toBe(md)
+  })
+
+  it('truncates long titles to ~60 chars with ellipsis', () => {
+    const longTitle = 'A'.repeat(70)
+    const refMap = new Map<string, RefInfo>([
+      ['owner/repo/issues/1', { title: longTitle, state: 'open', type: 'issue' }],
+    ])
+    const result = enrichIssueRefs('[#1](https://github.com/owner/repo/issues/1)', refMap)
+    expect(result).toContain('…')
+    expect(result).not.toContain(longTitle)
+  })
+
+  it('HTML-escapes title to prevent XSS', () => {
+    const refMap = new Map<string, RefInfo>([
+      ['owner/repo/issues/2', { title: '<script>alert(1)</script>', state: 'open', type: 'issue' }],
+    ])
+    const result = enrichIssueRefs('[#2](https://github.com/owner/repo/issues/2)', refMap)
+    expect(result).not.toContain('<script>')
+    expect(result).toContain('&lt;script&gt;')
+  })
+
+  it('replaces multiple links in a single string', () => {
+    const refMap = new Map<string, RefInfo>([
+      ['owner/repo/issues/1', { title: 'Bug', state: 'open', type: 'issue' }],
+      ['owner/repo/pull/2', { title: 'Fix', state: 'merged', type: 'pr' }],
+    ])
+    const md = 'See [#1](https://github.com/owner/repo/issues/1) and [#2](https://github.com/owner/repo/pull/2)'
+    const result = enrichIssueRefs(md, refMap)
+    expect(result).toContain('issue-open')
+    expect(result).toContain('pr-merged')
   })
 })
