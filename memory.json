@@ -1,50 +1,58 @@
 {
-  "last_run": "2026-04-29T06:38:00Z",
-  "run_id": "25094548542",
+  "last_run": "2026-04-30T06:43:00Z",
+  "run_id": "25151308864",
   "monthly_activity_issue": 5,
   "issue_label_cursor": null,
   "issue_comment_cursor": null,
   "comments_made": {},
   "improvement_prs": [
     {
-      "pr": 56,
-      "branch": "repo-assist/refactor-types-searchrepos-2026-04-25",
-      "title": "refactor(types): add RepoSearchResult type, improve searchRepos/getRecentRepos typing",
+      "pr": 62,
+      "branch": "repo-assist/perf-parallel-api-calls-2026-04-30",
+      "title": "perf: parallelize API calls in hasRepoAssistWorkflow, searchRepos, and generateInBackground",
       "status": "open",
-      "created": "2026-04-25",
+      "created": "2026-04-30",
+      "notes": "No node_modules in sandbox; no new TS errors in changed files. CI will run full tests on PR."
+    },
+    {
+      "pr": 61,
+      "branch": "repo-assist/improve-gh-bridge-util-tests-2026-04-29-57b64f99015155b0",
+      "title": "test(gh-bridge): export enrichIssueRefs/escapeHtml/RefInfo and add 26 tests for utility functions",
+      "status": "open",
+      "created": "2026-04-29",
       "notes": "CI passing on all 3 OS targets. Waiting for maintainer review."
     },
     {
-      "pr": 57,
-      "branch": "repo-assist/improve-gh-bridge-tests-2026-04-26",
-      "title": "test(gh-bridge): add 18 tests for addComment, closeIssue, closePR, getMonthlyActivity, getEvents, hasRepoAssistWorkflow",
+      "pr": 59,
+      "branch": "repo-assist/test-remaining-methods-2026-04-28-23db9552d1d0fec8",
+      "title": "test(gh-bridge): add tests for reopenIssue, createRepoAssistApp, saveRemoteRepoList, installModelsExtension, ensureAwExtension",
       "status": "open",
-      "created": "2026-04-26",
+      "created": "2026-04-28",
       "notes": "CI passing. Waiting for maintainer review."
     },
     {
       "pr": 58,
-      "branch": "repo-assist/improve-gh-bridge-tests-2026-04-27",
+      "branch": "repo-assist/test-remaining-gh-bridge-2026-04-27-b490096f96e99aad",
       "title": "test(gh-bridge): add 25 tests for getUsername, checkRepoAssistAppExists, write paths, extensions, graphqlExec",
       "status": "open",
       "created": "2026-04-27",
       "notes": "CI passing. Waiting for maintainer review."
     },
     {
-      "pr": 59,
-      "branch": "repo-assist/improve-gh-bridge-tests-2026-04-28",
-      "title": "test(gh-bridge): add 15 tests for reopenIssue, createRepoAssistApp, saveRemoteRepoList, installModelsExtension, ensureAwExtension",
+      "pr": 57,
+      "branch": "repo-assist/improve-gh-bridge-tests-2026-04-26-c1b5c5e52ab51271",
+      "title": "test(gh-bridge): add tests for addComment, closeIssue, closePR, getMonthlyActivity, getEvents, hasRepoAssistWorkflow",
       "status": "open",
-      "created": "2026-04-28",
-      "notes": "CI should be passing (same test infra). Waiting for maintainer review."
+      "created": "2026-04-26",
+      "notes": "CI passing. Waiting for maintainer review."
     },
     {
-      "pr": null,
-      "branch": "repo-assist/improve-gh-bridge-util-tests-2026-04-29",
-      "title": "test(gh-bridge): export enrichIssueRefs/escapeHtml/RefInfo, add 26 tests for getPRTimeline/getWorkflows/getFileContent/enrichIssueRefs/escapeHtml",
-      "status": "pending-push",
-      "created": "2026-04-29",
-      "notes": "Commit on branch, PR creation in progress via safeoutputs. Adds exports + 26 new tests. Also covers security-relevant escapeHtml/enrichIssueRefs."
+      "pr": 56,
+      "branch": "repo-assist/improve-repo-search-types-971d7bf12621e28a",
+      "title": "refactor(types): add RepoSearchResult type, improve searchRepos/getRecentRepos typing",
+      "status": "open",
+      "created": "2026-04-25",
+      "notes": "CI passing on all 3 OS targets. Waiting for maintainer review."
     }
   ],
   "open_issues": [
@@ -70,5 +78,5 @@
     "deps_checked": "2026-04-28",
     "marked_upgrade_issue": 60
   },
-  "notes": "All open Repo Assist PRs (#56-59) are test coverage improvements for gh-bridge.test.ts. CI passing on all. Waiting for maintainer to review/merge. PR for this run (util function exports + 26 tests) is pending-push. Test coverage has grown significantly: baseline 152 tests; PRs add ~65 more tests total. No user-created bugs found in any run — all open issues are Repo Assist tracking items. One area to investigate: getRecentRepos uses {owner} placeholder which may not work in desktop context. Future: add tests for generateRecap/runAIModel if possible."
+  "notes": "6 open Repo Assist PRs (#56-#62). PRs #56-#61 are test/refactor improvements; CI passing all. PR #62 is perf improvements (parallel API calls). No user-created bugs found in any run. Future: add tests for generateRecap/runAIModel if possible."
 }
