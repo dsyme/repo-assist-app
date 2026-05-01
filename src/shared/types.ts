@@ -178,8 +178,8 @@ export interface RepoAssistAPI {
   applyPatchPR: (issueRepo: string, targetRepo: string, commands: string[]) => Promise<void>
   getRepoPermission: (repo: string) => Promise<string>
   getViewerLogin: () => Promise<string>
-  searchRepos: (query: string) => Promise<{ fullName: string; description: string }[]>
-  getRecentRepos: () => Promise<{ fullName: string; description: string }[]>
+  searchRepos: (query: string) => Promise<RepoSearchResult[]>
+  getRecentRepos: () => Promise<RepoSearchResult[]>
   addRepo: (repo: string) => Promise<string[]>
   removeRepo: (repo: string) => Promise<string[]>
   getMonthlyActivity: (repo: string) => Promise<unknown>
@@ -214,6 +214,12 @@ export interface RepoAssistAPI {
 }
 
 /** Please Take a Look — items needing maintainer attention */
+/** A GitHub repository result from search or recent-repos lookup */
+export interface RepoSearchResult {
+  fullName: string
+  description: string
+}
+
 export interface PTALItem {
   /** Unique key: "owner/repo#123" */
   key: string

@@ -999,6 +999,87 @@ describe('GhBridge', () => {
     })
   })
 
+  describe('searchRepos', () => {
+    it('returns results from plain search when query is not owner/repo format', async () => {
+      const payload = [
+        { fullName: 'alice/my-tool', description: 'A tool' },
+        { fullName: 'bob/my-tool', description: 'Another tool' },
+      ]
+      mockExecFileAsync.mockResolvedValue({ stdout: JSON.stringify(payload), stderr: '' })
+
+      const results = await bridge.searchRepos('my-tool')
+      expect(results).toEqual(payload)
+    })
+
+    it('prepends exact owner/repo match and deduplicates from search results', async () => {
+      const directRepo = { fullName: 'alice/exact-repo', description: 'Direct' }
+      const searchPayload = [
+        { fullName: 'alice/exact-repo', description: 'Direct' },
+        { fullName: 'bob/other', description: 'Other' },
+      ]
+      mockExecFileAsync
+        .mockResolvedValueOnce({ stdout: JSON.stringify(directRepo), stderr: '' })
+        .mockResolvedValueOnce({ stdout: JSON.stringify(searchPayload), stderr: '' })
+
+      const results = await bridge.searchRepos('alice/exact-repo')
+      // exact match first, no duplicates
+      expect(results[0]).toEqual(directRepo)
+      expect(results.filter(r => r.fullName === 'alice/exact-repo')).toHaveLength(1)
+    })
+
+    it('falls back to plain search when direct fetch fails', async () => {
+      const searchPayload = [{ fullName: 'alice/exact-repo', description: 'Fallback' }]
+      mockExecFileAsync
+        .mockResolvedValueOnce({ stdout: '', stderr: 'not found' })
+        .mockResolvedValueOnce({ stdout: JSON.stringify(searchPayload), stderr: '' })
+
+      const results = await bridge.searchRepos('alice/exact-repo')
+      expect(results).toEqual(searchPayload)
+    })
+
+    it('returns empty array when exec fails', async () => {
+      mockExecFileAsync.mockRejectedValue(Object.assign(new Error('fail'), { code: 1, stdout: '', stderr: 'error' }))
+
+      const results = await bridge.searchRepos('nonexistent')
+      expect(results).toEqual([])
+    })
+  })
+
+  describe('getRecentRepos', () => {
+    it('returns repos fetched from user events', async () => {
+      const eventNames = 'alice/repo-a\nalice/repo-b\nalice/repo-a\n' // includes a duplicate
+      const repoA = { fullName: 'alice/repo-a', description: 'Repo A' }
+      const repoB = { fullName: 'alice/repo-b', description: 'Repo B' }
+      mockExecFileAsync
+        .mockResolvedValueOnce({ stdout: eventNames, stderr: '' })
+        .mockResolvedValueOnce({ stdout: JSON.stringify(repoA), stderr: '' })
+        .mockResolvedValueOnce({ stdout: JSON.stringify(repoB), stderr: '' })
+
+      const results = await bridge.getRecentRepos()
+      expect(results).toHaveLength(2) // deduped
+      expect(results[0]).toEqual(repoA)
+      expect(results[1]).toEqual(repoB)
+    })
+
+    it('returns empty array when events fetch fails', async () => {
+      mockExecFileAsync.mockRejectedValue(Object.assign(new Error('fail'), { code: 1, stdout: '', stderr: 'error' }))
+
+      const results = await bridge.getRecentRepos()
+      expect(results).toEqual([])
+    })
+
+    it('uses empty description when repo info fetch fails', async () => {
+      mockExecFileAsync
+        .mockResolvedValueOnce({ stdout: 'alice/broken-repo\n', stderr: '' })
+        .mockRejectedValueOnce(Object.assign(new Error('fail'), { code: 1, stdout: '', stderr: 'error' }))
+
+      const results = await bridge.getRecentRepos()
+      expect(results).toHaveLength(1)
+      expect(results[0].fullName).toBe('alice/broken-repo')
+      expect(results[0].description).toBe('')
+    })
+  })
+
   describe('mergePR', () => {
     it('returns dry-run result when writeMode is false', async () => {
       const result = await bridge.mergePR('owner/repo', 1, false)
@@ -1221,6 +1302,171 @@ describe('GhBridge', () => {
       expect(result.error).toContain('connection refused')
     })
   })
+
+  describe('addComment', () => {
+    it('returns dry-run result when writeMode is false', async () => {
+      const result = await bridge.addComment('owner/repo', 1, 'hello', false)
+      expect(result.stdout).toContain('DRY RUN')
+      expect(result.exitCode).toBe(0)
+      expect(mockExecFileAsync).not.toHaveBeenCalled()
+    })
+
+    it('passes body as a separate arg to avoid quoting issues', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+
+      await bridge.addComment('owner/repo', 5, 'body with "quotes"', true)
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('--body')
+      const bodyIndex = args.indexOf('--body')
+      expect(args[bodyIndex + 1]).toBe('body with "quotes"')
+    })
+
+    it('includes repo and issue number in command', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+
+      await bridge.addComment('owner/repo', 42, 'test', true)
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('42')
+      expect(args).toContain('-R')
+      expect(args).toContain('owner/repo')
+    })
+  })
+
+  describe('closeIssue', () => {
+    it('returns dry-run result when writeMode is false', async () => {
+      const result = await bridge.closeIssue('owner/repo', 1, 'completed', false)
+      expect(result.stdout).toContain('DRY RUN')
+      expect(result.exitCode).toBe(0)
+      expect(mockExecFileAsync).not.toHaveBeenCalled()
+    })
+
+    it('includes --reason "not planned" flag for not_planned reason', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+
+      await bridge.closeIssue('owner/repo', 3, 'not_planned', true)
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('--reason')
+      expect(args).toContain('not planned')
+    })
+
+    it('omits reason flag for completed reason', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+
+      await bridge.closeIssue('owner/repo', 3, 'completed', true)
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).not.toContain('--reason')
+    })
+  })
+
+  describe('closePR', () => {
+    it('returns dry-run result when writeMode is false', async () => {
+      const result = await bridge.closePR('owner/repo', 1, false)
+      expect(result.stdout).toContain('DRY RUN')
+      expect(result.exitCode).toBe(0)
+      expect(mockExecFileAsync).not.toHaveBeenCalled()
+    })
+
+    it('calls gh pr close when writeMode is true', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+
+      await bridge.closePR('owner/repo', 7, true)
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('close')
+      expect(args).toContain('7')
+      expect(args).toContain('-R')
+      expect(args).toContain('owner/repo')
+    })
+  })
+
+  describe('getMonthlyActivity', () => {
+    it('returns the first issue on success', async () => {
+      const issue = { number: 5, title: '[Repo Assist] Monthly Activity 2026-04', body: '...', updatedAt: '2026-04-01T00:00:00Z' }
+      mockExecFileAsync.mockResolvedValue({ stdout: JSON.stringify([issue]), stderr: '' })
+
+      const result = await bridge.getMonthlyActivity('owner/repo')
+      expect(result).toMatchObject({ number: 5, title: '[Repo Assist] Monthly Activity 2026-04' })
+    })
+
+    it('returns null when no issues found', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: JSON.stringify([]), stderr: '' })
+
+      const result = await bridge.getMonthlyActivity('owner/repo')
+      expect(result).toBeNull()
+    })
+
+    it('returns null on exec failure', async () => {
+      mockExecFileAsync.mockRejectedValue(Object.assign(new Error('fail'), { code: 1, stderr: 'err', stdout: '' }))
+
+      const result = await bridge.getMonthlyActivity('owner/repo')
+      expect(result).toBeNull()
+    })
+
+    it('returns null on invalid JSON', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: 'not-json', stderr: '' })
+
+      const result = await bridge.getMonthlyActivity('owner/repo')
+      expect(result).toBeNull()
+    })
+  })
+
+  describe('getEvents', () => {
+    it('returns parsed event array on success', async () => {
+      const events = [
+        { type: 'PushEvent', created_at: '2026-04-01T00:00:00Z', actor: 'octocat', payload_action: null },
+        { type: 'IssuesEvent', created_at: '2026-04-02T00:00:00Z', actor: 'monalisa', payload_action: 'opened' },
+      ]
+      mockExecFileAsync.mockResolvedValue({ stdout: JSON.stringify(events), stderr: '' })
+
+      const result = await bridge.getEvents('owner/repo')
+      expect(result).toHaveLength(2)
+      expect(result[0]).toMatchObject({ type: 'PushEvent', actor: 'octocat' })
+    })
+
+    it('returns empty array on exec failure', async () => {
+      mockExecFileAsync.mockRejectedValue(Object.assign(new Error('fail'), { code: 1, stderr: 'err', stdout: '' }))
+
+      const result = await bridge.getEvents('owner/repo')
+      expect(result).toEqual([])
+    })
+
+    it('returns empty array on invalid JSON', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: 'bad json{', stderr: '' })
+
+      const result = await bridge.getEvents('owner/repo')
+      expect(result).toEqual([])
+    })
+  })
+
+  describe('hasRepoAssistWorkflow', () => {
+    it('returns true when repo-assist.md exists', async () => {
+      // First call (getFileContent for .md) succeeds
+      mockExecFileAsync.mockResolvedValueOnce({ stdout: JSON.stringify({ content: btoa('content') }), stderr: '' })
+
+      const result = await bridge.hasRepoAssistWorkflow('owner/repo')
+      expect(result).toBe(true)
+    })
+
+    it('returns true when repo-assist.lock.yml exists but .md does not', async () => {
+      // First call (.md) fails, second call (.lock.yml) succeeds
+      mockExecFileAsync
+        .mockRejectedValueOnce(Object.assign(new Error('not found'), { code: 1, stderr: 'not found', stdout: '' }))
+        .mockResolvedValueOnce({ stdout: JSON.stringify({ content: btoa('lock content') }), stderr: '' })
+
+      const result = await bridge.hasRepoAssistWorkflow('owner/repo')
+      expect(result).toBe(true)
+    })
+
+    it('returns false when neither file exists', async () => {
+      // Both calls fail
+      mockExecFileAsync
+        .mockRejectedValueOnce(Object.assign(new Error('not found'), { code: 1, stderr: 'not found', stdout: '' }))
+        .mockRejectedValueOnce(Object.assign(new Error('not found'), { code: 1, stderr: 'not found', stdout: '' }))
+
+      const result = await bridge.hasRepoAssistWorkflow('owner/repo')
+      expect(result).toBe(false)
+    })
+  })
+
   describe('getUsername', () => {
     it('calls gh api user --jq .login and returns trimmed login', async () => {
       mockExecFileAsync.mockResolvedValue({ stdout: 'octocat\n', stderr: '' })
