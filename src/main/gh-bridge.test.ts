@@ -1127,4 +1127,228 @@ describe('GhBridge', () => {
       expect(args).toContain('--admin')
     })
   })
+
+  describe('getUsername', () => {
+    it('calls gh api user --jq .login and returns trimmed login', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: 'octocat\n', stderr: '' })
+
+      const result = await bridge.getUsername()
+      expect(result).toBe('octocat')
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('user')
+      expect(args).toContain('--jq')
+      expect(args).toContain('.login')
+    })
+
+    it('returns unknown on exec failure', async () => {
+      mockExecFileAsync.mockRejectedValue(new Error('not authenticated'))
+
+      const result = await bridge.getUsername()
+      expect(result).toBe('unknown')
+    })
+
+    it('returns unknown when stdout is empty', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '   ', stderr: '' })
+
+      const result = await bridge.getUsername()
+      expect(result).toBe('unknown')
+    })
+
+    it('caches the result after the first call', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: 'octocat', stderr: '' })
+
+      const first = await bridge.getUsername()
+      const second = await bridge.getUsername()
+      expect(first).toBe('octocat')
+      expect(second).toBe('octocat')
+      expect(mockExecFileAsync).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('checkRepoAssistAppExists', () => {
+    it('returns false when username is unknown', async () => {
+      mockExecFileAsync.mockRejectedValue(new Error('not auth'))
+
+      const result = await bridge.checkRepoAssistAppExists()
+      expect(result).toBe(false)
+    })
+
+    it('returns true when exec succeeds and stdout is non-empty', async () => {
+      mockExecFileAsync
+        .mockResolvedValueOnce({ stdout: 'octocat', stderr: '' }) // getUsername
+        .mockResolvedValueOnce({ stdout: 'octocat/.repo-assist-app', stderr: '' }) // api check
+
+      const result = await bridge.checkRepoAssistAppExists()
+      expect(result).toBe(true)
+    })
+
+    it('returns false when exec fails (repo does not exist)', async () => {
+      mockExecFileAsync
+        .mockResolvedValueOnce({ stdout: 'octocat', stderr: '' }) // getUsername
+        .mockRejectedValueOnce(Object.assign(new Error('not found'), { code: 1, stdout: '', stderr: 'Not Found' }))
+
+      const result = await bridge.checkRepoAssistAppExists()
+      expect(result).toBe(false)
+    })
+
+    it('returns false when stdout is empty', async () => {
+      mockExecFileAsync
+        .mockResolvedValueOnce({ stdout: 'octocat', stderr: '' }) // getUsername
+        .mockResolvedValueOnce({ stdout: '   ', stderr: '' }) // api returns blank
+
+      const result = await bridge.checkRepoAssistAppExists()
+      expect(result).toBe(false)
+    })
+  })
+
+  describe('write paths for execWriteOrDryRun methods', () => {
+    beforeEach(() => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+    })
+
+    it('markPRReady calls gh pr ready when writeMode is true', async () => {
+      const result = await bridge.markPRReady('owner/repo', 7, true)
+      expect(result.exitCode).toBe(0)
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('ready')
+      expect(args).toContain('7')
+      expect(args).toContain('-R')
+      expect(args).toContain('owner/repo')
+    })
+
+    it('updatePRBranch calls gh api PUT when writeMode is true', async () => {
+      const result = await bridge.updatePRBranch('owner/repo', 8, true)
+      expect(result.exitCode).toBe(0)
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('-X')
+      expect(args).toContain('PUT')
+      expect(args.join(' ')).toContain('pulls/8/update-branch')
+    })
+
+    it('approvePR calls gh pr review --approve when writeMode is true', async () => {
+      const result = await bridge.approvePR('owner/repo', 9, true)
+      expect(result.exitCode).toBe(0)
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('review')
+      expect(args).toContain('--approve')
+      expect(args).toContain('9')
+    })
+
+    it('addLabel calls gh issue edit --add-label when writeMode is true', async () => {
+      const result = await bridge.addLabel('owner/repo', 10, 'issue', 'bug', true)
+      expect(result.exitCode).toBe(0)
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('edit')
+      expect(args).toContain('--add-label')
+      expect(args).toContain('bug')
+      expect(args).toContain('10')
+    })
+
+    it('addLabel calls gh pr edit --add-label for PR type', async () => {
+      await bridge.addLabel('owner/repo', 11, 'pr', 'enhancement', true)
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args[1]).toBe('edit')
+      expect(args[0]).toBe('pr')
+    })
+
+    it('removeLabel calls gh issue edit --remove-label when writeMode is true', async () => {
+      const result = await bridge.removeLabel('owner/repo', 12, 'issue', 'wontfix', true)
+      expect(result.exitCode).toBe(0)
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('--remove-label')
+      expect(args).toContain('wontfix')
+    })
+
+    it('cancelRun calls gh run cancel when writeMode is true', async () => {
+      const result = await bridge.cancelRun('owner/repo', 999, true)
+      expect(result.exitCode).toBe(0)
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('cancel')
+      expect(args).toContain('999')
+      expect(args).toContain('-R')
+      expect(args).toContain('owner/repo')
+    })
+
+    it('rerunFailedJobs calls gh run rerun --failed when writeMode is true', async () => {
+      const result = await bridge.rerunFailedJobs('owner/repo', 1234, true)
+      expect(result.exitCode).toBe(0)
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('rerun')
+      expect(args).toContain('--failed')
+      expect(args).toContain('1234')
+    })
+  })
+
+  describe('checkModelsExtension / checkAwExtension', () => {
+    it('checkModelsExtension returns true when gh-models is listed', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: 'github/gh-models  Models  1.0.0\n', stderr: '' })
+
+      const result = await bridge.checkModelsExtension()
+      expect(result).toBe(true)
+    })
+
+    it('checkModelsExtension returns false when gh-models is absent', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: 'github/gh-aw  AW  1.0.0\n', stderr: '' })
+
+      const result = await bridge.checkModelsExtension()
+      expect(result).toBe(false)
+    })
+
+    it('checkModelsExtension returns false when extension list fails', async () => {
+      mockExecFileAsync.mockRejectedValue(new Error('gh not found'))
+
+      const result = await bridge.checkModelsExtension()
+      expect(result).toBe(false)
+    })
+
+    it('checkAwExtension returns true when gh-aw is listed', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: 'github/gh-aw  AW  2.0.0\n', stderr: '' })
+
+      const result = await bridge.checkAwExtension()
+      expect(result).toBe(true)
+    })
+
+    it('checkAwExtension returns false when gh-aw is absent', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: 'github/gh-models  Models  1.0.0\n', stderr: '' })
+
+      const result = await bridge.checkAwExtension()
+      expect(result).toBe(false)
+    })
+  })
+
+  describe('graphqlExec', () => {
+    it('returns parsed JSON on success', async () => {
+      const responseData = { data: { viewer: { login: 'octocat' } } }
+      mockExecFileAsync.mockResolvedValue({ stdout: JSON.stringify(responseData), stderr: '' })
+
+      const result = await bridge.graphqlExec('{ viewer { login } }', {})
+      expect(result).toEqual(responseData)
+    })
+
+    it('passes query and variables as args', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '{"data":{}}', stderr: '' })
+
+      await bridge.graphqlExec('{ viewer { login } }', { owner: 'octocat', repo: 'hello' })
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('graphql')
+      expect(args).toContain('-f')
+      expect(args).toContain('query={ viewer { login } }')
+      expect(args).toContain('-F')
+      expect(args).toContain('owner=octocat')
+      expect(args).toContain('repo=hello')
+    })
+
+    it('throws on exec failure', async () => {
+      const err = Object.assign(new Error('API error'), { code: 1, stdout: '', stderr: 'Unauthorized' })
+      mockExecFileAsync.mockRejectedValue(err)
+
+      await expect(bridge.graphqlExec('{ viewer { login } }', {})).rejects.toThrow()
+    })
+
+    it('throws on invalid JSON response', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: 'not json', stderr: '' })
+
+      await expect(bridge.graphqlExec('{ viewer { login } }', {})).rejects.toThrow()
+    })
+  })
 })
