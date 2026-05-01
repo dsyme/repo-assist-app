@@ -14,7 +14,7 @@ import {
   SyncIcon,
   LinkExternalIcon,
 } from '@primer/octicons-react'
-import { NavState, RepoIssue, RepoPR, PTALItem } from '@shared/types'
+import { NavState, RepoIssue, RepoPR, PTALItem, RepoSearchResult } from '@shared/types'
 
 interface RepoData {
   issues: RepoIssue[]
@@ -37,9 +37,9 @@ export function Sidebar({ repos, repoData, nav, onNavigate, ptalItems, onAddRepo
   const [expandedRepos, setExpandedRepos] = useState<Set<string>>(new Set())
   const [showRepoChooser, setShowRepoChooser] = useState(false)
   const [repoSearch, setRepoSearch] = useState('')
-  const [searchResults, setSearchResults] = useState<{ fullName: string; description: string }[]>([])
+  const [searchResults, setSearchResults] = useState<RepoSearchResult[]>([])
   const [searching, setSearching] = useState(false)
-  const [recentRepos, setRecentRepos] = useState<{ fullName: string; description: string }[]>([])
+  const [recentRepos, setRecentRepos] = useState<RepoSearchResult[]>([])
   const [loadingRecent, setLoadingRecent] = useState(false)
   const chooserRef = useRef<HTMLDivElement>(null)
 
