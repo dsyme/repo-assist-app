@@ -403,26 +403,32 @@ export class GhBridge {
 
   async searchRepos(query: string): Promise<unknown[]> {
     // If the query looks like "owner/repo", try fetching it directly first (handles forks
-    // which are excluded from GitHub search results)
+    // which are excluded from GitHub search results). Run both in parallel to save a round-trip.
     if (/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(query.trim())) {
-      const direct = await this.exec(
-        `api repos/${query.trim()} --jq '{fullName: .full_name, description: .description}'`
-      )
+      const [direct, searchResult] = await Promise.all([
+        this.exec(
+          `api repos/${query.trim()} --jq '{fullName: .full_name, description: .description}'`
+        ),
+        this.exec(
+          `search repos "${query}" --json fullName,description,updatedAt --limit 10`
+        ),
+      ])
       if (direct.exitCode === 0 && direct.stdout.trim()) {
         try {
           const repo = JSON.parse(direct.stdout) as { fullName: string; description: string }
-          // Also run a search to supplement with related results
-          const searchResult = await this.exec(
-            `search repos "${query}" --json fullName,description,updatedAt --limit 9`
-          )
-          const searchRepos: { fullName: string; description: string }[] = searchResult.exitCode === 0
+          const supplemental: { fullName: string; description: string }[] = searchResult.exitCode === 0
             ? JSON.parse(searchResult.stdout).map((r: { fullName: string; description: string }) => ({ fullName: r.fullName, description: r.description }))
             : []
           // Prepend exact match, deduplicating
-          const rest = searchRepos.filter(r => r.fullName.toLowerCase() !== repo.fullName.toLowerCase())
+          const rest = supplemental.filter(r => r.fullName.toLowerCase() !== repo.fullName.toLowerCase())
           return [repo, ...rest]
-        } catch { /* fall through to plain search */ }
+        } catch { /* fall through */ }
       }
+      // Direct lookup failed — return search results if available
+      if (searchResult.exitCode === 0) {
+        try { return JSON.parse(searchResult.stdout) } catch {}
+      }
+      return []
     }
     const result = await this.exec(
       `search repos "${query}" --json fullName,description,updatedAt --limit 10`
@@ -560,10 +566,11 @@ export class GhBridge {
 
   /** Check if repo has repo-assist workflow files */
   async hasRepoAssistWorkflow(repo: string): Promise<boolean> {
-    const md = await this.getFileContent(repo, '.github/workflows/repo-assist.md')
-    if (md !== null) return true
-    const lock = await this.getFileContent(repo, '.github/workflows/repo-assist.lock.yml')
-    return lock !== null
+    const [md, lock] = await Promise.all([
+      this.getFileContent(repo, '.github/workflows/repo-assist.md'),
+      this.getFileContent(repo, '.github/workflows/repo-assist.lock.yml'),
+    ])
+    return md !== null || lock !== null
   }
 
   // === AI Model ===
@@ -615,21 +622,24 @@ export class GhBridge {
     // Use sinceDate (from last clear) or default to 2 weeks ago
     const cutoff = sinceDate ? new Date(sinceDate) : new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
 
-    // Phase 1: Gather automation items (single scan, filter locally for PTAL)
-    const allAutomationItems = await this.scanPTAL(repos, {})
+    // Phase 1 and Phase 2 run in parallel — they are fully independent.
+    // scanPTAL and the supplementary data fetches both hit the GitHub API
+    // and neither depends on the other's results.
+    const [allAutomationItems, supplementary] = await Promise.all([
+      this.scanPTAL(repos, {}),
+      Promise.all(repos.map(async repo => {
+        const [merged, closed, newIssues] = await Promise.all([
+          this.getRecentMergedPRs(repo, cutoff),
+          this.getRecentClosedIssues(repo, cutoff),
+          this.getRecentNewIssues(repo, cutoff),
+        ])
+        return { repo, merged, closed, newIssues }
+      })),
+    ])
+
     const ptalItems = allAutomationItems.filter(item =>
       !clearedState[item.key] || clearedState[item.key] !== item.lastActivity.id
     )
-
-    // Phase 2: Gather supplementary data in parallel across repos
-    const supplementary = await Promise.all(repos.map(async repo => {
-      const [merged, closed, newIssues] = await Promise.all([
-        this.getRecentMergedPRs(repo, cutoff),
-        this.getRecentClosedIssues(repo, cutoff),
-        this.getRecentNewIssues(repo, cutoff),
-      ])
-      return { repo, merged, closed, newIssues }
-    }))
 
     // Build categorised data for the prompt
     const sections: string[] = []
