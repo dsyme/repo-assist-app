@@ -622,21 +622,24 @@ export class GhBridge {
     // Use sinceDate (from last clear) or default to 2 weeks ago
     const cutoff = sinceDate ? new Date(sinceDate) : new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
 
-    // Phase 1: Gather automation items (single scan, filter locally for PTAL)
-    const allAutomationItems = await this.scanPTAL(repos, {})
+    // Phase 1 and Phase 2 run in parallel — they are fully independent.
+    // scanPTAL and the supplementary data fetches both hit the GitHub API
+    // and neither depends on the other's results.
+    const [allAutomationItems, supplementary] = await Promise.all([
+      this.scanPTAL(repos, {}),
+      Promise.all(repos.map(async repo => {
+        const [merged, closed, newIssues] = await Promise.all([
+          this.getRecentMergedPRs(repo, cutoff),
+          this.getRecentClosedIssues(repo, cutoff),
+          this.getRecentNewIssues(repo, cutoff),
+        ])
+        return { repo, merged, closed, newIssues }
+      })),
+    ])
+
     const ptalItems = allAutomationItems.filter(item =>
       !clearedState[item.key] || clearedState[item.key] !== item.lastActivity.id
     )
-
-    // Phase 2: Gather supplementary data in parallel across repos
-    const supplementary = await Promise.all(repos.map(async repo => {
-      const [merged, closed, newIssues] = await Promise.all([
-        this.getRecentMergedPRs(repo, cutoff),
-        this.getRecentClosedIssues(repo, cutoff),
-        this.getRecentNewIssues(repo, cutoff),
-      ])
-      return { repo, merged, closed, newIssues }
-    }))
 
     // Build categorised data for the prompt
     const sections: string[] = []
