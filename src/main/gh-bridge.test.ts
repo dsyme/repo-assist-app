@@ -1128,6 +1128,181 @@ describe('GhBridge', () => {
     })
   })
 
+  describe('reopenIssue', () => {
+    it('returns dry-run result when writeMode is false', async () => {
+      const result = await bridge.reopenIssue('owner/repo', 7, false)
+      expect(result.stdout).toContain('[DRY RUN]')
+      expect(mockExecFileAsync).not.toHaveBeenCalled()
+    })
+
+    it('calls gh issue reopen when writeMode is true', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: 'reopened', stderr: '' })
+      const result = await bridge.reopenIssue('owner/repo', 7, true)
+      expect(result.exitCode).toBe(0)
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('issue')
+      expect(args).toContain('reopen')
+      expect(args).toContain('7')
+      expect(args.some(a => a.includes('owner/repo'))).toBe(true)
+    })
+  })
+
+  describe('createRepoAssistApp', () => {
+    it('returns true on success', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '{"id":1}', stderr: '' })
+      const result = await bridge.createRepoAssistApp()
+      expect(result).toBe(true)
+    })
+
+    it('returns false when exec fails', async () => {
+      mockExecFileAsync.mockRejectedValue(Object.assign(new Error('Not Found'), { code: 1, stderr: 'Not Found', stdout: '' }))
+      const result = await bridge.createRepoAssistApp()
+      expect(result).toBe(false)
+    })
+
+    it('uses POST to user/repos with correct repo name', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '{}', stderr: '' })
+      await bridge.createRepoAssistApp()
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('user/repos')
+      expect(args).toContain('-X')
+      expect(args).toContain('POST')
+      expect(args.some(a => a.includes('.repo-assist-app'))).toBe(true)
+    })
+  })
+
+  describe('saveRemoteRepoList', () => {
+    it('returns false when username is unknown', async () => {
+      // getUsername returns 'unknown' when exec fails
+      mockExecFileAsync.mockRejectedValue(Object.assign(new Error('auth'), { code: 1, stderr: '', stdout: '' }))
+      const result = await bridge.saveRemoteRepoList(['owner/repo'])
+      expect(result).toBe(false)
+    })
+
+    it('returns true on successful save without existing SHA', async () => {
+      let callCount = 0
+      mockExecFileAsync.mockImplementation(async () => {
+        callCount++
+        if (callCount === 1) return { stdout: 'testuser', stderr: '' } // getUsername
+        if (callCount === 2) {
+          // GET existing SHA fails → no sha
+          const err = Object.assign(new Error('404'), { code: 1, stderr: '404', stdout: '' })
+          throw err
+        }
+        return { stdout: '{}', stderr: '' } // PUT succeeds
+      })
+
+      const result = await bridge.saveRemoteRepoList(['owner/repo'])
+      expect(result).toBe(true)
+      // PUT call should not include a sha flag
+      const putArgs: string[] = mockExecFileAsync.mock.calls[2][1] as string[]
+      expect(putArgs.some(a => a.includes('sha'))).toBe(false)
+    })
+
+    it('includes sha flag when file already exists', async () => {
+      let callCount = 0
+      mockExecFileAsync.mockImplementation(async () => {
+        callCount++
+        if (callCount === 1) return { stdout: 'testuser', stderr: '' }
+        if (callCount === 2) return { stdout: 'abc123sha\n', stderr: '' } // existing SHA
+        return { stdout: '{}', stderr: '' }
+      })
+
+      const result = await bridge.saveRemoteRepoList(['owner/repo'])
+      expect(result).toBe(true)
+      const putArgs: string[] = mockExecFileAsync.mock.calls[2][1] as string[]
+      expect(putArgs.some(a => a.includes('abc123sha'))).toBe(true)
+    })
+
+    it('encodes repo list as base64 JSON', async () => {
+      mockExecFileAsync.mockImplementation(async (_cmd: string, args: string[]) => {
+        // Check if this is the PUT call
+        if ((args as string[]).includes('-X')) return { stdout: '{}', stderr: '' }
+        return { stdout: 'user', stderr: '' }
+      })
+
+      await bridge.saveRemoteRepoList(['owner/repo', 'other/thing'])
+      // Find the PUT call and check the content field is valid base64 JSON
+      const allArgs = mockExecFileAsync.mock.calls.flatMap(c => c[1] as string[])
+      const contentArg = allArgs.find(a => a.startsWith('content='))
+      expect(contentArg).toBeDefined()
+      const encoded = contentArg!.slice('content='.length)
+      const decoded = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8'))
+      expect(decoded.repositories).toEqual(['owner/repo', 'other/thing'])
+    })
+  })
+
+  describe('installModelsExtension', () => {
+    it('returns success true when install succeeds', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+      const result = await bridge.installModelsExtension()
+      expect(result.success).toBe(true)
+      expect(result.error).toBeUndefined()
+    })
+
+    it('returns success false with error message on failure', async () => {
+      const err = Object.assign(new Error('install failed'), { stderr: 'permission denied' })
+      mockExecFileAsync.mockRejectedValue(err)
+      const result = await bridge.installModelsExtension()
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('permission denied')
+    })
+
+    it('installs github/gh-models extension', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+      await bridge.installModelsExtension()
+      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
+      expect(args).toContain('extension')
+      expect(args).toContain('install')
+      expect(args).toContain('github/gh-models')
+    })
+  })
+
+  describe('ensureAwExtension', () => {
+    it('upgrades extension when already installed', async () => {
+      let callCount = 0
+      mockExecFileAsync.mockImplementation(async (_cmd: string, args: string[]) => {
+        callCount++
+        if ((args as string[]).includes('list')) return { stdout: 'github/gh-aw\n', stderr: '' }
+        return { stdout: '', stderr: '' }
+      })
+
+      const result = await bridge.ensureAwExtension()
+      expect(result.success).toBe(true)
+      const upgradeCalls = mockExecFileAsync.mock.calls.filter(
+        c => (c[1] as string[]).includes('upgrade')
+      )
+      expect(upgradeCalls.length).toBeGreaterThan(0)
+    })
+
+    it('installs extension when not yet installed', async () => {
+      mockExecFileAsync.mockImplementation(async (_cmd: string, args: string[]) => {
+        if ((args as string[]).includes('list')) return { stdout: '', stderr: '' }
+        return { stdout: '', stderr: '' }
+      })
+
+      const result = await bridge.ensureAwExtension()
+      expect(result.success).toBe(true)
+      const installCalls = mockExecFileAsync.mock.calls.filter(
+        c => (c[1] as string[]).includes('install')
+      )
+      expect(installCalls.length).toBeGreaterThan(0)
+      expect(installCalls.some(c => (c[1] as string[]).includes('github/gh-aw'))).toBe(true)
+    })
+
+    it('returns success false with error when install fails', async () => {
+      const err = Object.assign(new Error('network error'), { stderr: 'connection refused' })
+      mockExecFileAsync.mockImplementation(async (_cmd: string, args: string[]) => {
+        if ((args as string[]).includes('list')) return { stdout: '', stderr: '' }
+        throw err
+      })
+
+      const result = await bridge.ensureAwExtension()
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('connection refused')
+    })
+  })
+
   describe('addComment', () => {
     it('returns dry-run result when writeMode is false', async () => {
       const result = await bridge.addComment('owner/repo', 1, 'hello', false)
