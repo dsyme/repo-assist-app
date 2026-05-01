@@ -403,26 +403,32 @@ export class GhBridge {
 
   async searchRepos(query: string): Promise<unknown[]> {
     // If the query looks like "owner/repo", try fetching it directly first (handles forks
-    // which are excluded from GitHub search results)
+    // which are excluded from GitHub search results). Run both in parallel to save a round-trip.
     if (/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(query.trim())) {
-      const direct = await this.exec(
-        `api repos/${query.trim()} --jq '{fullName: .full_name, description: .description}'`
-      )
+      const [direct, searchResult] = await Promise.all([
+        this.exec(
+          `api repos/${query.trim()} --jq '{fullName: .full_name, description: .description}'`
+        ),
+        this.exec(
+          `search repos "${query}" --json fullName,description,updatedAt --limit 10`
+        ),
+      ])
       if (direct.exitCode === 0 && direct.stdout.trim()) {
         try {
           const repo = JSON.parse(direct.stdout) as { fullName: string; description: string }
-          // Also run a search to supplement with related results
-          const searchResult = await this.exec(
-            `search repos "${query}" --json fullName,description,updatedAt --limit 9`
-          )
-          const searchRepos: { fullName: string; description: string }[] = searchResult.exitCode === 0
+          const supplemental: { fullName: string; description: string }[] = searchResult.exitCode === 0
             ? JSON.parse(searchResult.stdout).map((r: { fullName: string; description: string }) => ({ fullName: r.fullName, description: r.description }))
             : []
           // Prepend exact match, deduplicating
-          const rest = searchRepos.filter(r => r.fullName.toLowerCase() !== repo.fullName.toLowerCase())
+          const rest = supplemental.filter(r => r.fullName.toLowerCase() !== repo.fullName.toLowerCase())
           return [repo, ...rest]
-        } catch { /* fall through to plain search */ }
+        } catch { /* fall through */ }
       }
+      // Direct lookup failed — return search results if available
+      if (searchResult.exitCode === 0) {
+        try { return JSON.parse(searchResult.stdout) } catch {}
+      }
+      return []
     }
     const result = await this.exec(
       `search repos "${query}" --json fullName,description,updatedAt --limit 10`
@@ -560,10 +566,11 @@ export class GhBridge {
 
   /** Check if repo has repo-assist workflow files */
   async hasRepoAssistWorkflow(repo: string): Promise<boolean> {
-    const md = await this.getFileContent(repo, '.github/workflows/repo-assist.md')
-    if (md !== null) return true
-    const lock = await this.getFileContent(repo, '.github/workflows/repo-assist.lock.yml')
-    return lock !== null
+    const [md, lock] = await Promise.all([
+      this.getFileContent(repo, '.github/workflows/repo-assist.md'),
+      this.getFileContent(repo, '.github/workflows/repo-assist.lock.yml'),
+    ])
+    return md !== null || lock !== null
   }
 
   // === AI Model ===
