@@ -102,14 +102,16 @@ export default function App() {
       // Kick off background recap generation so results are cached when the user opens panels.
       const generateInBackground = async () => {
         try {
-          const cachedGlobal = await window.repoAssist.getRecapCache('__all__')
-          if (!cachedGlobal) {
+          // Check all recap caches in parallel to minimise IPC round-trips
+          const keys = ['__all__', ...repoList]
+          const caches = await Promise.all(keys.map(k => window.repoAssist.getRecapCache(k).catch(() => null)))
+          const [globalCache, ...repoCaches] = caches
+          if (!globalCache) {
             await window.repoAssist.generateRecap(repoList)
           }
-          for (const repo of repoList) {
-            const cachedRepo = await window.repoAssist.getRecapCache(repo)
-            if (!cachedRepo) {
-              await window.repoAssist.generateRecap([repo])
+          for (let i = 0; i < repoList.length; i++) {
+            if (!repoCaches[i]) {
+              await window.repoAssist.generateRecap([repoList[i]])
             }
           }
         } catch { /* background — ignore errors */ }
