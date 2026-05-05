@@ -1,6 +1,12 @@
-# Repo Assist App - Highly Experimental
+# Repo Assist - The Automation
 
-A cross-platform Electron desktop app for GitHub repository maintainers. Manage issues, pull requests, automation workflows, and CI status across multiple repos — all from one window, powered by the `gh` CLI.
+See [🌈Repo Assist: Crunching the Technical Debt with GitHub Agentic Workflows](https://dsyme.net/2026/02/25/repo-assist-a-repository-assistant/) and the docs at [Repo Assist](https://github.com/githubnext/agentics/blob/main/docs/repo-assist.md#-repo-assist) and [the actual workflow](https://github.com/githubnext/agentics/blob/main/workflows/repo-assist.md?plain=1).
+
+---
+
+## Repo Assist App - Don's Highly Experimental Additional IDE
+
+Don's personal cross-platform Electron desktop app augmenting the repository automation provided by the core automated [🌈Repo Assist Workflow](https://dsyme.net/2026/02/25/repo-assist-a-repository-assistant/). Manage issues, pull requests, automation workflows, and CI status across multiple repos — all from one window, powered by the `gh` CLI.
 
 [![CI](https://github.com/dsyme/repo-assist-app/actions/workflows/ci.yml/badge.svg)](https://github.com/dsyme/repo-assist-app/actions/workflows/ci.yml)
 
