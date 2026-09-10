@@ -1,7 +1,7 @@
 {
-  "last_run": "2026-09-03T17:13:47Z",
-  "run_id": "33783030279",
-  "monthly_activity_issue": "2026-09 (new, created this run; closed 2026-08 issue #74)",
+  "last_run": "2026-09-10T17:13:51Z",
+  "run_id": "34506555915",
+  "monthly_activity_issue": "#76 (2026-09, updated this run with 2 new PRs)",
   "issue_label_cursor": null,
   "issue_comment_cursor": null,
   "comments_made": {},
@@ -12,23 +12,39 @@
       "title": "perf(gh-bridge): batch command log trimming instead of re-slicing every call",
       "status": "open",
       "created": "2026-08-27",
-      "notes": "Task 8 (Performance). CI passing (all 3 OS builds green) as of 2026-09-03. Still awaiting maintainer review."
+      "notes": "Task 8 (Performance). CI passing. Still awaiting maintainer review as of 2026-09-10."
     },
     {
-      "pr": "pending (created this run, PR number not yet known locally)",
+      "pr": 75,
       "branch": "repo-assist/improve-sidebar-ptal-count-2026-09-03",
       "title": "perf(Sidebar): precompute PTAL counts per repo instead of per-render filtering",
       "status": "open",
       "created": "2026-09-03",
-      "notes": "Task 8/5 (Performance/Coding improvement). Sidebar.tsx did ptalItems.filter(i => i.repo === repo).length inside repos.map() -> O(repos*ptalItems) per render. Replaced with useMemo'd Map<repo,count> built in one pass. typecheck + build + 237 tests pass."
+      "notes": "Task 8/5 (Performance/Coding improvement). Still awaiting maintainer review as of 2026-09-10."
+    },
+    {
+      "pr": "pending (created this run, PR number not yet known locally)",
+      "branch": "repo-assist/eng-bump-minor-deps-2026-09-10",
+      "title": "chore(deps): bump minor/patch updates for Primer, React, Vite, styled-components, electron",
+      "status": "open",
+      "created": "2026-09-10",
+      "notes": "Task 4 (Engineering Investments). Bumped @primer/octicons-react 19.24.1->19.35.0, @primer/primitives 11.7.0->11.10.0, @primer/react 38.20.0->38.38.0, electron 41.2.1->41.10.7, react/react-dom/react-is 19.2.5->19.3.0, styled-components 6.4.0->6.5.3, vite 7.3.2->7.3.6, @types/react(-dom) 19.2.x->19.3.0. All within existing package.json semver ranges (no range widening). Deliberately excluded major bumps (electron 44, vite 8, marked 18, typescript 7, vitest 5, @vitejs/plugin-react 6). typecheck + build + 237 tests pass. No open Dependabot PRs existed to bundle."
+    },
+    {
+      "pr": "pending (created this run, PR number not yet known locally)",
+      "branch": "repo-assist/test-parse-patch-instructions-2026-09-10",
+      "title": "test(parse-patch-instructions): add edge-case coverage for validation branches",
+      "status": "open",
+      "created": "2026-09-10",
+      "notes": "Task 9 (Testing Improvements). parsePatchInstructions (src/renderer/utils/parse-patch-instructions.ts) previously only covered by 2 happy-path fixtures + 1 negative test in DetailPanel.test.tsx. Added 13 new tests for empty body, no-match body, each required-line-missing branch, missing --repo, default title fallback, quoted title, unquoted branch name, and bundle_path substitution for git am. typecheck + build + 250 tests pass (up from 237)."
     }
   ],
   "open_issues": [],
   "eng_checks": {
-    "dependabot_prs_checked": "2026-05-07",
+    "dependabot_prs_checked": "2026-09-10",
     "node_version_checked": "2026-04-22",
-    "deps_checked": "2026-08-27",
+    "deps_checked": "2026-09-10",
     "marked_upgrade_issue": null
   },
-  "notes": "No open issues in repo except the monthly activity tracker itself (0 open issues, 0 unlabelled) -> Task 1/2/3 not applicable this run, substituted Task 5 (coding improvement) for Task 2. Reviewed App.tsx, Sidebar.tsx, PRList.tsx, DetailPanel.tsx, gh-bridge.ts, local-state.ts for perf/quality issues; found and fixed the Sidebar PTAL-count O(n*m) filter. Other areas (PRItemRow filters, DetailPanel filters, IssueList grouping) operate on small bounded per-item arrays (checks/labels), not worth optimizing. PR #73 (Aug 27 perf fix) still open, CI green, awaiting maintainer merge -- do not duplicate that work. Closed old August Monthly Activity issue #74, created September one. Future: investigate vite 7->8 major upgrade; consider marked v17->v18 major bump if issue reopened by maintainer; consider React.memo for PRItemRow/IssueList rows if list sizes grow large (not yet justified)."
+  "notes": "Task selection this run: Task 2 (Issue Comment), Task 4 (Engineering Investments), Task 9 (Testing Improvements). Only 1 open issue exists (the monthly activity tracker #76 itself) -> Task 2 not applicable, no substitute needed since Task 4 and Task 9 already selected and both actionable; skipped adding a 3rd substitute task since 2 solid PRs were already delivered this run and repo state (0 open non-tracker issues, 0 unlabelled, 2 open repo-assist PRs from prior runs still awaiting review, 0 other open PRs, 0 stale PRs) leaves no further high-confidence action. Reviewed npm outdated: bumped 8 packages within semver range (Task 4), left 6 major-version bumps for future consideration. Reviewed test coverage gaps across src/: found parsePatchInstructions undertested pure function, added 13 edge case tests (Task 9). Updated Monthly Activity issue #76 with new run history entry and 2 new suggested-action items for the freshly created PRs. Future: investigate vite 7->8, electron 41->44, marked 17->18, typescript 5->7, vitest 4->5 major upgrades when time allows; consider React.memo for PRItemRow/IssueList rows if list sizes grow large (not yet justified); PRs #73 and #75 still awaiting maintainer merge, do not duplicate that work."
 }
