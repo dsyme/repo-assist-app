@@ -161,6 +161,18 @@ describe('GhBridge', () => {
       expect(log[0].command).toContain('issue')
       expect(log[0].exitCode).toBe(0)
     })
+
+    it('caps the log size and keeps the most recent entries', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '[]', stderr: '' })
+
+      for (let i = 0; i < 1200; i++) {
+        await bridge.exec(`issue list -R owner/repo${i}`)
+      }
+      const log = bridge.getCommandLog()
+      // Trimming is batched (not exactly 500) to avoid an O(n) re-slice on every call.
+      expect(log.length).toBeLessThanOrEqual(1000)
+      expect(log[log.length - 1].command).toContain('repo1199')
+    })
   })
 
   describe('dry-run behavior', () => {

@@ -1125,7 +1125,10 @@ ${sections.join('\n\n')}`
 
   private addToLog(entry: CommandLogEntry): void {
     this.commandLog.push(entry)
-    if (this.commandLog.length > this.maxLogEntries) {
+    // Trim in batches once we've grown well past capacity, rather than
+    // re-slicing (and reallocating) the whole array on every single call
+    // once at the limit. This amortizes the O(n) trim cost across many pushes.
+    if (this.commandLog.length > this.maxLogEntries * 2) {
       this.commandLog = this.commandLog.slice(-this.maxLogEntries)
     }
   }
