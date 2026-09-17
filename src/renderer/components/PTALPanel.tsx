@@ -11,6 +11,7 @@ import {
 } from '@primer/octicons-react'
 import { PTALItem, RepoPR, NavState } from '@shared/types'
 import { usePRListActions, PRItemRow } from './PRItemRow'
+import { ptalActionTitle } from '../utils/ptal-action-title'
 
 interface PTALPanelProps {
   repos: string[]
@@ -244,22 +245,8 @@ function PTALRepoGroup({ repo, items, repoPRs, clearing, onClear, onItemClick, o
 }
 
 /**
- * Build a human-friendly action title for a PTAL item
+ * Build a human-friendly action title for a PTAL item — see utils/ptal-action-title.ts
  */
-function ptalActionTitle(item: PTALItem): { verb: string; number: string; title: string } {
-  const cleanTitle = item.title.replace(/^\[Repo Assist\]\s*/, '')
-  const number = `#${item.number}`
-  if (item.lastActivity.type === 'comment') {
-    return { verb: 'Check comment on', number, title: cleanTitle }
-  }
-  if (item.lastActivity.type === 'commit') {
-    return { verb: 'Review update on', number, title: cleanTitle }
-  }
-  if (item.type === 'pr') {
-    return { verb: 'Review', number, title: cleanTitle }
-  }
-  return { verb: 'Review', number, title: cleanTitle }
-}
 
 function PTALActivityBadge({ activity }: { activity: PTALItem['lastActivity'] }) {
   const name = activity.automationName ?? activity.actor

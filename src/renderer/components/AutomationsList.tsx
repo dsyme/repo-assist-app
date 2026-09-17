@@ -20,6 +20,7 @@ import {
 import { marked } from 'marked'
 import { RepoWorkflow, RepoRun } from '@shared/types'
 import { sanitizeHtml } from '../utils/sanitize'
+import { workflowKind, kindLabel, runsTimeSpan, WorkflowKind } from '../utils/automation-classify'
 
 marked.setOptions({ gfm: true, breaks: true })
 
@@ -32,19 +33,10 @@ interface AutomationsListProps {
 interface EnrichedWorkflow extends RepoWorkflow {
   agentic: boolean
   specPath: string | null
-  kind: 'cicd' | 'ghaw' | 'copilot' | 'github'
+  kind: WorkflowKind
 }
 
-function workflowKind(w: RepoWorkflow, agentic: boolean): EnrichedWorkflow['kind'] {
-  // GitHub built-in automations — check by name first, before agentic
-  if (w.name === 'Dependabot Updates' || w.name === 'pages-build-deployment') return 'github'
-  if (w.path.startsWith('dynamic/') && w.name.toLowerCase().includes('copilot')) return 'copilot'
-  if (agentic) return 'ghaw'
-  if (w.path.startsWith('dynamic/')) return 'github'
-  return 'cicd'
-}
-
-function WorkflowKindIcon({ kind, size = 16 }: { kind: EnrichedWorkflow['kind']; size?: number }) {
+function WorkflowKindIcon({ kind, size = 16 }: { kind: WorkflowKind; size?: number }) {
   switch (kind) {
     case 'ghaw': return <WorkflowIcon size={size} className="gh-icon-accent" />
     case 'copilot': return <CopilotIcon size={size} className="gh-icon-accent" />
@@ -53,32 +45,8 @@ function WorkflowKindIcon({ kind, size = 16 }: { kind: EnrichedWorkflow['kind'];
   }
 }
 
-function kindLabel(kind: EnrichedWorkflow['kind']): string {
-  switch (kind) {
-    case 'ghaw': return 'Agentic'
-    case 'copilot': return 'Copilot'
-    case 'github': return 'GitHub'
-    default: return 'CI/CD'
-  }
-}
-
 /** Ordering for kind groups */
-const KIND_ORDER: EnrichedWorkflow['kind'][] = ['ghaw', 'cicd', 'copilot', 'github']
-
-/** Compute a succinct time span like "19h", "3d", "2w" from the oldest run to now */
-function runsTimeSpan(runList: RepoRun[]): string {
-  if (runList.length === 0) return ''
-  // Runs are newest-first; oldest is last
-  const oldest = new Date(runList[runList.length - 1].createdAt)
-  const diffMs = Date.now() - oldest.getTime()
-  const hours = Math.round(diffMs / (1000 * 60 * 60))
-  if (hours < 1) return '<1h'
-  if (hours < 48) return `${hours}h`
-  const days = Math.round(hours / 24)
-  if (days < 14) return `${days}d`
-  const weeks = Math.round(days / 7)
-  return `${weeks}w`
-}
+const KIND_ORDER: WorkflowKind[] = ['ghaw', 'cicd', 'copilot', 'github']
 
 /** Describe what triggered a run in a human-friendly way */
 function runTriggerDescription(run: RepoRun, isAgentic: boolean, slashCommand?: string): { icon: React.ReactNode; label: string } {
