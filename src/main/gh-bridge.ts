@@ -1194,10 +1194,10 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
-type RefInfo = { title: string; state: 'open' | 'closed' | 'merged'; type: 'issue' | 'pr' }
+export type RefInfo = { title: string; state: 'open' | 'closed' | 'merged'; type: 'issue' | 'pr' }
 
 /** Replace markdown issue/PR links with enriched HTML containing status icons and titles */
-function enrichIssueRefs(
+export function enrichIssueRefs(
   markdown: string,
   refMap: Map<string, RefInfo>
 ): string {

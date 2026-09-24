@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { parseGhArgs, isAutomationActor, stripCodeFences, extractAutomationName, GhBridge } from './gh-bridge'
+import { parseGhArgs, isAutomationActor, stripCodeFences, extractAutomationName, enrichIssueRefs, GhBridge, type RefInfo } from './gh-bridge'
 
 // === Pure function tests (no mocking needed) ===
 
@@ -95,6 +95,72 @@ describe('extractAutomationName', () => {
 
   it('returns null for empty string', () => {
     expect(extractAutomationName('')).toBeNull()
+  })
+})
+
+describe('enrichIssueRefs', () => {
+  const refMap = new Map<string, RefInfo>([
+    ['owner/repo/issues/1', { title: 'Open issue', state: 'open', type: 'issue' }],
+    ['owner/repo/issues/2', { title: 'Closed issue', state: 'closed', type: 'issue' }],
+    ['owner/repo/pull/3', { title: 'Open PR', state: 'open', type: 'pr' }],
+    ['owner/repo/pull/4', { title: 'Merged PR', state: 'merged', type: 'pr' }],
+    ['owner/repo/pull/5', { title: 'Closed PR', state: 'closed', type: 'pr' }],
+  ])
+
+  it('enriches an open issue link with the issue-open class and title', () => {
+    const result = enrichIssueRefs('See [#1](https://github.com/owner/repo/issues/1) for details', refMap)
+    expect(result).toContain('class="gh-ref issue-open"')
+    expect(result).toContain('#1 — Open issue')
+    expect(result).toContain('href="https://github.com/owner/repo/issues/1"')
+  })
+
+  it('enriches a closed issue link with the issue-closed class', () => {
+    const result = enrichIssueRefs('[#2](https://github.com/owner/repo/issues/2)', refMap)
+    expect(result).toContain('class="gh-ref issue-closed"')
+  })
+
+  it('enriches an open PR link with the pr-open class', () => {
+    const result = enrichIssueRefs('[#3](https://github.com/owner/repo/pull/3)', refMap)
+    expect(result).toContain('class="gh-ref pr-open"')
+  })
+
+  it('enriches a merged PR link with the pr-merged class', () => {
+    const result = enrichIssueRefs('[#4](https://github.com/owner/repo/pull/4)', refMap)
+    expect(result).toContain('class="gh-ref pr-merged"')
+  })
+
+  it('enriches a closed (not merged) PR link with the pr-closed class', () => {
+    const result = enrichIssueRefs('[#5](https://github.com/owner/repo/pull/5)', refMap)
+    expect(result).toContain('class="gh-ref pr-closed"')
+  })
+
+  it('leaves the link unchanged when no matching ref is found', () => {
+    const input = 'See [#99](https://github.com/owner/repo/issues/99) for details'
+    expect(enrichIssueRefs(input, refMap)).toBe(input)
+  })
+
+  it('truncates long titles and appends an ellipsis', () => {
+    const longTitle = 'A'.repeat(80)
+    const map = new Map<string, RefInfo>([['owner/repo/issues/1', { title: longTitle, state: 'open', type: 'issue' }]])
+    const result = enrichIssueRefs('[#1](https://github.com/owner/repo/issues/1)', map)
+    expect(result).toContain('A'.repeat(57) + '…')
+    expect(result).not.toContain('A'.repeat(58))
+  })
+
+  it('escapes HTML-significant characters in the title', () => {
+    const map = new Map<string, RefInfo>([['owner/repo/issues/1', { title: 'Fix <script> & "quotes"', state: 'open', type: 'issue' }]])
+    const result = enrichIssueRefs('[#1](https://github.com/owner/repo/issues/1)', map)
+    expect(result).toContain('Fix &lt;script&gt; &amp; &quot;quotes&quot;')
+    expect(result).not.toContain('<script>')
+  })
+
+  it('enriches multiple links in the same markdown', () => {
+    const result = enrichIssueRefs(
+      '[#1](https://github.com/owner/repo/issues/1) and [#3](https://github.com/owner/repo/pull/3)',
+      refMap
+    )
+    expect(result).toContain('issue-open')
+    expect(result).toContain('pr-open')
   })
 })
 
