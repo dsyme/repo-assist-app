@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "cursors": {
+    "labelling_after": null,
+    "investigation_after": null
+  },
+  "issues": [],
+  "fixes": [
+    {
+      "issue": 78,
+      "pr": 79,
+      "branch": "repo-assist/eng-bump-minor-deps-2026-09-17",
+      "status": "open",
+      "updated_at": "2026-09-24",
+      "note": "Task 4 dep bump PR supersedes closed #78; still awaiting maintainer review."
+    }
+  ],
+  "checks": [
+    {
+      "area": "dependencies",
+      "checked_at": "2026-09-24",
+      "result": "npm outdated reviewed; no new Dependabot PRs; #79 (open) already covers current semver-range bumps.",
+      "follow_up": "Major bumps deferred: vite 7->8, electron 41->44, marked 17->18, typescript 5->7, vitest 4->5."
+    },
+    {
+      "area": "ci",
+      "checked_at": "2026-09-24",
+      "result": "ci.yml still pinned actions/checkout@v4 and actions/setup-node@v4 while repo-assist.lock.yml used v7; opened PR to bump both to v7.",
+      "follow_up": null
+    },
+    {
+      "area": "tests",
+      "checked_at": "2026-09-24",
+      "result": "enrichIssueRefs in gh-bridge.ts (icon-class/truncation/escaping/fallback logic used by generateRecap) had zero direct coverage; added 9 unit tests, 246/246 passing.",
+      "follow_up": null
+    }
+  ],
+  "completed_actions": [],
+  "priorities": [
+    {
+      "task": 4,
+      "item": "PR repo-assist/eng-ci-actions-upgrade-2026-09-24",
+      "note": "ci.yml actions/checkout+setup-node v4->v7, awaiting maintainer review; do not duplicate."
+    },
+    {
+      "task": 9,
+      "item": "PR repo-assist/test-enrich-issue-refs-2026-09-24",
+      "note": "9 new tests for enrichIssueRefs in gh-bridge.ts, awaiting maintainer review; do not duplicate."
+    },
+    {
+      "task": 4,
+      "item": "Major dependency upgrades",
+      "note": "vite 7->8, electron 41->44, marked 17->18, typescript 5->7, vitest 4->5 deferred pending review of breaking changes."
+    }
+  ]
+}
