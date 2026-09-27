@@ -3,6 +3,8 @@ import { Text, ActionList, Spinner, Button } from '@primer/react'
 import { SyncIcon } from '@primer/octicons-react'
 import { RepoPR } from '@shared/types'
 import { usePRListActions, PRItemRow } from './PRItemRow'
+import { ApproveAllWorkflowsButton } from './ApproveAllWorkflowsButton'
+import { openGitHubItemOnModifierClick } from '../utils/github-navigation'
 
 interface PRListProps {
   repo: string
@@ -11,16 +13,16 @@ interface PRListProps {
   loading?: boolean
   onSelectItem: (number: number) => void
   onRefresh: () => void
-  onPRStateChange?: (prNumber: number) => void
+  onPRUpdate?: (prNumber: number, updates: Partial<RepoPR>) => void
+  onWorkflowRunsApproved: (runIds: number[]) => void
 }
 
-export function PRList({ repo, prs, writeMode, loading, onSelectItem, onRefresh, onPRStateChange }: PRListProps) {
-  const actions = usePRListActions(repo, prs, onPRStateChange)
+export function PRList({ repo, prs, writeMode, loading, onSelectItem, onRefresh, onPRUpdate, onWorkflowRunsApproved }: PRListProps) {
+  const actions = usePRListActions(repo, prs, onPRUpdate)
 
-  // Apply local overrides to props, filtering out closed/merged PRs
   const effectivePRs = prs
-    .map(pr => actions.localOverrides[pr.number] ? { ...pr, ...actions.localOverrides[pr.number] } : pr)
     .filter(pr => pr.state !== 'MERGED' && pr.state !== 'CLOSED')
+  const workflowRunIds = [...new Set(effectivePRs.flatMap(pr => pr.workflowRunIdsAwaitingApproval))]
   const sorted = [...effectivePRs].sort((a, b) =>
     new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
   )
@@ -35,14 +37,20 @@ export function PRList({ repo, prs, writeMode, loading, onSelectItem, onRefresh,
             {!writeMode && ' · Read-only mode'}
           </span>
         </div>
-        <Button
-          leadingVisual={loading ? undefined : SyncIcon}
-          onClick={onRefresh}
-          size="small"
-          disabled={loading}
-        >
-          {loading ? <><Spinner size="small" /> Refreshing…</> : 'Refresh'}
-        </Button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <ApproveAllWorkflowsButton
+            runsByRepo={{ [repo]: workflowRunIds }}
+            onApproved={onWorkflowRunsApproved}
+          />
+          <Button
+            leadingVisual={loading ? undefined : SyncIcon}
+            onClick={onRefresh}
+            size="small"
+            disabled={loading}
+          >
+            {loading ? <><Spinner size="small" /> Refreshing…</> : 'Refresh'}
+          </Button>
+        </div>
       </div>
 
       <ActionList>
@@ -51,7 +59,10 @@ export function PRList({ repo, prs, writeMode, loading, onSelectItem, onRefresh,
             key={pr.number}
             pr={pr}
             actions={actions}
-            onSelect={() => onSelectItem(pr.number)}
+            onSelect={(event) => {
+              if (openGitHubItemOnModifierClick(event, repo, 'pr', pr.number)) return
+              onSelectItem(pr.number)
+            }}
           />
         ))}
       </ActionList>

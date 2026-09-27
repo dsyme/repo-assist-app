@@ -9,8 +9,11 @@ import {
   GitCommitIcon,
   XIcon,
 } from '@primer/octicons-react'
-import { PTALItem, RepoPR, NavState } from '@shared/types'
+import { PTALItem, RepoIssue, RepoPR, NavState } from '@shared/types'
 import { usePRListActions, PRItemRow } from './PRItemRow'
+import { ApproveAllWorkflowsButton } from './ApproveAllWorkflowsButton'
+import { IssueItemRow } from './IssueItemRow'
+import { openGitHubItemOnModifierClick, type NavigationEvent } from '../utils/github-navigation'
 
 interface PTALPanelProps {
   repos: string[]
@@ -21,14 +24,17 @@ interface PTALPanelProps {
   /** Optional: restrict to a single repo (for repo-specific view) */
   filterRepo?: string
   /** PR data per repo — used to render rich PR rows */
-  repoData?: Record<string, { prs: RepoPR[] }>
+  repoData?: Record<string, { issues: RepoIssue[]; prs: RepoPR[] }>
+  isUnread: (repo: string, number: number, updatedAt: string) => boolean
+  onMarkRead: (key: string) => void
   onClear: (item: PTALItem) => void
   onRefresh: () => void
   onNavigate: (nav: NavState) => void
-  onPRStateChange?: (repo: string, prNumber: number) => void
+  onPRUpdate?: (repo: string, prNumber: number, updates: Partial<RepoPR>) => void
+  onWorkflowRunsApproved: (runIds: number[]) => void
 }
 
-export function PTALPanel({ repos, items, loading, initialized, filterRepo, repoData, onClear, onRefresh, onNavigate, onPRStateChange }: PTALPanelProps) {
+export function PTALPanel({ repos, items, loading, initialized, filterRepo, repoData, isUnread, onMarkRead, onClear, onRefresh, onNavigate, onPRUpdate, onWorkflowRunsApproved }: PTALPanelProps) {
   // Local clearing set: tracks items mid-animation so they render with fade-out
   // before actually being removed from App state
   const [clearing, setClearing] = useState<Set<string>>(new Set())
@@ -46,14 +52,16 @@ export function PTALPanel({ repos, items, loading, initialized, filterRepo, repo
     }, 350)
   }, [onClear])
 
-  const handleItemClick = useCallback((item: PTALItem) => {
+  const handleItemClick = useCallback((event: NavigationEvent, item: PTALItem) => {
+    if (openGitHubItemOnModifierClick(event, item.repo, item.type, item.number)) return
+    if (item.type === 'issue') onMarkRead(item.key)
     onNavigate({
       section: null,
       repo: item.repo,
       repoSection: item.type === 'pr' ? 'prs' : 'issues',
       selectedItem: item.number,
     })
-  }, [onNavigate])
+  }, [onMarkRead, onNavigate])
 
   // Filter and group items
   const filteredItems = useMemo(() => {
@@ -77,6 +85,18 @@ export function PTALPanel({ repos, items, loading, initialized, filterRepo, repo
 
   const shortRepo = (repo: string) => repo.split('/').pop() || repo
   const showGroupHeaders = !filterRepo && groupedByRepo.length > 1
+  const workflowRunsByRepo = useMemo(() => {
+    const runsByRepo: Record<string, number[]> = {}
+    for (const group of groupedByRepo) {
+      const prNumbers = new Set(group.items.filter(item => item.type === 'pr').map(item => item.number))
+      const runIds = repoData?.[group.repo]?.prs
+        .filter(pr => prNumbers.has(pr.number))
+        .flatMap(pr => pr.workflowRunIdsAwaitingApproval)
+        ?? []
+      if (runIds.length > 0) runsByRepo[group.repo] = [...new Set(runIds)]
+    }
+    return runsByRepo
+  }, [groupedByRepo, repoData])
 
   return (
     <div>
@@ -91,14 +111,20 @@ export function PTALPanel({ repos, items, loading, initialized, filterRepo, repo
             }
           </span>
         </div>
-        <Button
-          leadingVisual={loading ? Spinner : SyncIcon}
-          onClick={onRefresh}
-          disabled={loading}
-          size="small"
-        >
-          {loading ? 'Scanning…' : 'Refresh'}
-        </Button>
+        <div style={{ display: 'flex', gap: 4 }}>
+          <ApproveAllWorkflowsButton
+            runsByRepo={workflowRunsByRepo}
+            onApproved={onWorkflowRunsApproved}
+          />
+          <Button
+            leadingVisual={loading ? Spinner : SyncIcon}
+            onClick={onRefresh}
+            disabled={loading}
+            size="small"
+          >
+            {loading ? 'Scanning…' : 'Refresh'}
+          </Button>
+        </div>
       </div>
 
       {!initialized && (
@@ -127,11 +153,13 @@ export function PTALPanel({ repos, items, loading, initialized, filterRepo, repo
               <PTALRepoGroup
                 repo={group.repo}
                 items={group.items}
+                repoIssues={repoData?.[group.repo]?.issues ?? []}
                 repoPRs={repoData?.[group.repo]?.prs ?? []}
+                isUnread={isUnread}
                 clearing={clearing}
                 onClear={handleClear}
                 onItemClick={handleItemClick}
-                onPRStateChange={onPRStateChange ? (n) => onPRStateChange(group.repo, n) : undefined}
+                onPRUpdate={onPRUpdate ? (number, updates) => onPRUpdate(group.repo, number, updates) : undefined}
               />
             </div>
           ))}
@@ -142,72 +170,117 @@ export function PTALPanel({ repos, items, loading, initialized, filterRepo, repo
 }
 
 /** Renders a group of PTAL items for a single repo — enables the usePRListActions hook */
-function PTALRepoGroup({ repo, items, repoPRs, clearing, onClear, onItemClick, onPRStateChange }: {
+function PTALRepoGroup({ repo, items, repoIssues, repoPRs, isUnread, clearing, onClear, onItemClick, onPRUpdate }: {
   repo: string
   items: PTALItem[]
+  repoIssues: RepoIssue[]
   repoPRs: RepoPR[]
+  isUnread: (repo: string, number: number, updatedAt: string) => boolean
   clearing: Set<string>
   onClear: (item: PTALItem) => void
-  onItemClick: (item: PTALItem) => void
-  onPRStateChange?: (prNumber: number) => void
+  onItemClick: (event: NavigationEvent, item: PTALItem) => void
+  onPRUpdate?: (prNumber: number, updates: Partial<RepoPR>) => void
 }) {
   // Filter to just the PRs that appear in PTAL items
   const ptalPRNumbers = useMemo(() => new Set(items.filter(i => i.type === 'pr').map(i => i.number)), [items])
-  const relevantPRs = useMemo(() => repoPRs.filter(pr => ptalPRNumbers.has(pr.number)), [repoPRs, ptalPRNumbers])
+  const relevantPRs = useMemo(
+    () => repoPRs.filter(pr => ptalPRNumbers.has(pr.number)),
+    [repoPRs, ptalPRNumbers]
+  )
+  const issueLookup = useMemo(
+    () => new Map(repoIssues.map(issue => [issue.number, issue])),
+    [repoIssues]
+  )
 
-  const actions = usePRListActions(repo, relevantPRs, onPRStateChange)
+  const actions = usePRListActions(repo, relevantPRs, onPRUpdate)
 
-  // Build a lookup from PR number to RepoPR (with overrides applied)
+  // Build a lookup from PR number to RepoPR
   const prLookup = useMemo(() => {
     const map = new Map<number, RepoPR>()
     for (const pr of relevantPRs) {
-      const overridden = actions.localOverrides[pr.number] ? { ...pr, ...actions.localOverrides[pr.number] } : pr
-      map.set(pr.number, overridden)
+      map.set(pr.number, pr)
     }
     return map
-  }, [relevantPRs, actions.localOverrides])
+  }, [relevantPRs])
 
   return (
     <ActionList>
       {items.map((item, idx) => {
         const isClearing = clearing.has(item.key)
         const pr = item.type === 'pr' ? prLookup.get(item.number) : undefined
+        const issue = item.type === 'issue' ? issueLookup.get(item.number) : undefined
 
-        // PR items with matching RepoPR data: render rich PRItemRow
+        const dismissButton = (
+          <button
+            className="ptal-dismiss-btn"
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              onClear(item)
+            }}
+            aria-label="Dismiss item"
+            title="Dismiss"
+          >
+            <XIcon size={14} />
+          </button>
+        )
+
         if (pr && pr.state !== 'MERGED' && pr.state !== 'CLOSED') {
           return (
             <div
               key={item.key}
-              className={`ptal-row fade-in ${isClearing ? 'ptal-clearing' : ''}`}
+              className={`ptal-row-container fade-in ${isClearing ? 'ptal-clearing' : ''}`}
               style={{ animationDelay: `${idx * 40}ms` }}
+              onClickCapture={(event) => {
+                if ((event.target as HTMLElement).closest('button.ptal-dismiss-btn')) return
+                openGitHubItemOnModifierClick(event, item.repo, item.type, item.number)
+              }}
             >
               <PRItemRow
                 pr={pr}
                 actions={actions}
-                onSelect={() => onItemClick(item)}
+                onSelect={(event) => onItemClick(event, item)}
               />
-              <button
-                className="ptal-dismiss-btn"
-                onClick={() => onClear(item)}
-                aria-label="Dismiss item"
-                title="Dismiss"
-              >
-                <XIcon size={14} />
-              </button>
+              {dismissButton}
             </div>
           )
         }
 
-        // Issue items (or PR items without matching data): keep existing rendering
+        if (issue) {
+          return (
+            <div
+              key={item.key}
+              className={`ptal-row-container fade-in ${isClearing ? 'ptal-clearing' : ''}`}
+              style={{ animationDelay: `${idx * 40}ms` }}
+              onClickCapture={(event) => {
+                if ((event.target as HTMLElement).closest('button.ptal-dismiss-btn')) return
+                openGitHubItemOnModifierClick(event, item.repo, item.type, item.number)
+              }}
+            >
+              <IssueItemRow
+                issue={issue}
+                unread={isUnread(repo, issue.number, issue.updatedAt)}
+                onSelect={(event) => onItemClick(event, item)}
+              />
+              {dismissButton}
+            </div>
+          )
+        }
+
+        // Keep a fallback for cached PTAL items whose source item is no longer open.
         const action = ptalActionTitle(item)
         return (
           <div
             key={item.key}
-            className={`ptal-row fade-in ${isClearing ? 'ptal-clearing' : ''}`}
+            className={`ptal-row-container fade-in ${isClearing ? 'ptal-clearing' : ''}`}
             style={{ animationDelay: `${idx * 40}ms` }}
+            onClickCapture={(event) => {
+              if ((event.target as HTMLElement).closest('button.ptal-dismiss-btn')) return
+              openGitHubItemOnModifierClick(event, item.repo, item.type, item.number)
+            }}
           >
             <ActionList.Item
-              onClick={() => onItemClick(item)}
+              onSelect={(event) => onItemClick(event, item)}
             >
               <ActionList.LeadingVisual>
                 {item.type === 'pr'
@@ -228,14 +301,7 @@ function PTALRepoGroup({ repo, items, repoPRs, clearing, onClear, onItemClick, o
                 </div>
               </div>
             </ActionList.Item>
-            <button
-              className="ptal-dismiss-btn"
-              onClick={() => onClear(item)}
-              aria-label="Dismiss item"
-              title="Dismiss"
-            >
-              <XIcon size={14} />
-            </button>
+            {dismissButton}
           </div>
         )
       })}

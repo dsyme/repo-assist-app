@@ -1,7 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { parseGhArgs, isAutomationActor, stripCodeFences, extractAutomationName, GhBridge } from './gh-bridge'
+import { parseGhArgs, isAutomationActor, isIgnoredIssueTitle, stripCodeFences, extractAutomationName, GhBridge } from './gh-bridge'
 
 // === Pure function tests (no mocking needed) ===
+
+describe('isIgnoredIssueTitle', () => {
+  it('matches internal AW issue titles only', () => {
+    expect(isIgnoredIssueTitle('[aw] Repo Assist failed')).toBe(true)
+    expect(isIgnoredIssueTitle('[aw] Detection Runs')).toBe(true)
+    expect(isIgnoredIssueTitle('[aw] Failed jobs: Repo Assist')).toBe(true)
+    expect(isIgnoredIssueTitle('  [AW] Detection Runs  ')).toBe(true)
+    expect(isIgnoredIssueTitle('[aw] Detection Run')).toBe(false)
+  })
+})
 
 describe('parseGhArgs', () => {
   it('splits simple command', () => {
@@ -183,6 +193,73 @@ describe('GhBridge', () => {
       expect(result.exitCode).toBe(0)
     })
 
+    it('approveWorkflowRuns logs every run as a dry-run when writeMode is false', async () => {
+      const result = await bridge.approveWorkflowRuns('owner/repo', [123, 456], false)
+      expect(result.stdout).toContain('Workflow run 123 would be approved')
+      expect(result.stdout).toContain('Workflow run 456 would be approved')
+      expect(result.exitCode).toBe(0)
+      expect(mockExecFileAsync).not.toHaveBeenCalled()
+      expect(bridge.getCommandLog()).toHaveLength(2)
+    })
+
+    it('approveWorkflowRuns posts approval for every run when writeMode is true', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
+
+      const result = await bridge.approveWorkflowRuns('owner/repo', [123, 456], true)
+
+      expect(result.stdout).toBe('Approved 2 workflow runs')
+      expect(mockExecFileAsync).toHaveBeenNthCalledWith(
+        1,
+        'gh',
+        ['api', 'repos/owner/repo/actions/runs/123/approve', '-X', 'POST'],
+        expect.anything()
+      )
+      expect(mockExecFileAsync).toHaveBeenNthCalledWith(
+        2,
+        'gh',
+        ['api', 'repos/owner/repo/actions/runs/456/approve', '-X', 'POST'],
+        expect.anything()
+      )
+    })
+
+    it('treats a stale run that is no longer awaiting approval as success', async () => {
+      const staleError = Object.assign(new Error('not awaiting approval'), {
+        code: 1,
+        stdout: '',
+        stderr: 'Workflow run is not awaiting approval',
+      })
+      mockExecFileAsync
+        .mockRejectedValueOnce(staleError)
+        .mockResolvedValueOnce({ stdout: 'success\n', stderr: '' })
+
+      const result = await bridge.approveWorkflowRuns('owner/repo', [123], true)
+
+      expect(result.exitCode).toBe(0)
+      expect(result.stdout).toBe('1 workflow run was already approved')
+      expect(mockExecFileAsync).toHaveBeenNthCalledWith(
+        2,
+        'gh',
+        ['api', 'repos/owner/repo/actions/runs/123', '--jq', '.conclusion'],
+        expect.anything()
+      )
+    })
+
+    it('preserves the approval error when the run still requires approval', async () => {
+      const approvalError = Object.assign(new Error('approval failed'), {
+        code: 1,
+        stdout: '',
+        stderr: 'approval failed',
+      })
+      mockExecFileAsync
+        .mockRejectedValueOnce(approvalError)
+        .mockResolvedValueOnce({ stdout: 'action_required\n', stderr: '' })
+
+      const result = await bridge.approveWorkflowRuns('owner/repo', [123], true)
+
+      expect(result.exitCode).toBe(1)
+      expect(result.stderr).toBe('approval failed')
+    })
+
     it('closeIssue returns dry-run result when writeMode is false', async () => {
       const result = await bridge.closeIssue('owner/repo', 1, 'completed', false)
       expect(result.stdout).toContain('DRY RUN')
@@ -272,12 +349,16 @@ describe('GhBridge', () => {
   })
 
   describe('getIssues', () => {
-    it('returns parsed JSON on success', async () => {
-      const issues = [{ number: 1, title: 'Test' }]
+    it('returns parsed JSON while excluding internal AW issues', async () => {
+      const issues = [
+        { number: 1, title: 'Test' },
+        { number: 2, title: '[aw] Repo Assist failed' },
+        { number: 3, title: '[aw] Detection Runs' },
+      ]
       mockExecFileAsync.mockResolvedValue({ stdout: JSON.stringify(issues), stderr: '' })
 
       const result = await bridge.getIssues('owner/repo')
-      expect(result).toEqual(issues)
+      expect(result).toEqual([issues[0]])
     })
 
     it('returns empty array on exec failure', async () => {
@@ -313,12 +394,42 @@ describe('GhBridge', () => {
   })
 
   describe('getPRs', () => {
-    it('returns parsed JSON on success', async () => {
+    it('returns PRs with no pending workflow approvals by default', async () => {
       const prs = [{ number: 1, title: 'PR Test' }]
-      mockExecFileAsync.mockResolvedValue({ stdout: JSON.stringify(prs), stderr: '' })
+      mockExecFileAsync
+        .mockResolvedValueOnce({ stdout: JSON.stringify(prs), stderr: '' })
+        .mockResolvedValueOnce({ stdout: '', stderr: '' })
 
       const result = await bridge.getPRs('owner/repo')
-      expect(result).toEqual(prs)
+      expect(result).toEqual([{ ...prs[0], workflowRunIdsAwaitingApproval: [] }])
+    })
+
+    it('maps action-required workflow runs to their pull requests', async () => {
+      const prs = [{ number: 1, title: 'First' }, { number: 2, title: 'Second' }]
+      const runs = [
+        JSON.stringify({ id: 101, pull_requests: [{ number: 2 }] }),
+        JSON.stringify({ id: 102, pull_requests: [{ number: 2 }] }),
+      ].join('\n')
+      mockExecFileAsync
+        .mockResolvedValueOnce({ stdout: JSON.stringify(prs), stderr: '' })
+        .mockResolvedValueOnce({ stdout: runs, stderr: '' })
+
+      const result = await bridge.getPRs('owner/repo')
+
+      expect(result[0].workflowRunIdsAwaitingApproval).toEqual([])
+      expect(result[1].workflowRunIdsAwaitingApproval).toEqual([101, 102])
+      expect(mockExecFileAsync).toHaveBeenNthCalledWith(
+        2,
+        'gh',
+        [
+          'api',
+          'repos/owner/repo/actions/runs?status=action_required&event=pull_request&per_page=100',
+          '--paginate',
+          '--jq',
+          '.workflow_runs[] | {id, pull_requests}',
+        ],
+        expect.anything()
+      )
     })
   })
 
@@ -480,6 +591,8 @@ describe('GhBridge', () => {
               nodes: [
                 makeIssue(42, '[repo-assist] Monthly Activity 2024-01'),
                 makeIssue(44, '[Repo Assist] Monthy Activity 2024-02'),
+                makeIssue(45, '[aw] Repo Assist failed'),
+                makeIssue(46, '[aw] Detection Runs'),
                 makeIssue(43, 'Monthly Activity from another tool'),
               ],
               pageInfo: { hasNextPage: false, endCursor: '' },
@@ -876,6 +989,23 @@ describe('GhBridge', () => {
 
       const result = await bridge.getIssueDetail('owner/repo', 1)
       expect(result).toEqual(detail)
+    })
+
+    it('returns null for ignored internal AW issues', async () => {
+      const detail = {
+        number: 1,
+        title: '[aw] Detection Runs',
+        body: '',
+        state: 'open',
+        labels: [],
+        author: { login: 'github-actions[bot]' },
+        comments: [],
+        createdAt: '',
+        updatedAt: '',
+      }
+      mockExecFileAsync.mockResolvedValue({ stdout: JSON.stringify(detail), stderr: '' })
+
+      expect(await bridge.getIssueDetail('owner/repo', 1)).toBeNull()
     })
 
     it('returns null on exec failure', async () => {
@@ -1292,32 +1422,6 @@ describe('GhBridge', () => {
     })
   })
 
-  describe('installModelsExtension', () => {
-    it('returns success true when install succeeds', async () => {
-      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
-      const result = await bridge.installModelsExtension()
-      expect(result.success).toBe(true)
-      expect(result.error).toBeUndefined()
-    })
-
-    it('returns success false with error message on failure', async () => {
-      const err = Object.assign(new Error('install failed'), { stderr: 'permission denied' })
-      mockExecFileAsync.mockRejectedValue(err)
-      const result = await bridge.installModelsExtension()
-      expect(result.success).toBe(false)
-      expect(result.error).toContain('permission denied')
-    })
-
-    it('installs github/gh-models extension', async () => {
-      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' })
-      await bridge.installModelsExtension()
-      const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
-      expect(args).toContain('extension')
-      expect(args).toContain('install')
-      expect(args).toContain('github/gh-models')
-    })
-  })
-
   describe('ensureAwExtension', () => {
     it('upgrades extension when already installed', async () => {
       let callCount = 0
@@ -1678,25 +1782,19 @@ describe('GhBridge', () => {
     })
   })
 
-  describe('checkModelsExtension / checkAwExtension', () => {
-    it('checkModelsExtension returns true when gh-models is listed', async () => {
-      mockExecFileAsync.mockResolvedValue({ stdout: 'github/gh-models  Models  1.0.0\n', stderr: '' })
+  describe('checkCopilotCLI / checkAwExtension', () => {
+    it('checkCopilotCLI returns true when the command succeeds', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: 'GitHub Copilot CLI 1.0.76', stderr: '' })
 
-      const result = await bridge.checkModelsExtension()
+      const result = await bridge.checkCopilotCLI()
       expect(result).toBe(true)
+      expect(mockExecFileAsync).toHaveBeenCalledWith('copilot', ['--version'], { timeout: 10000 })
     })
 
-    it('checkModelsExtension returns false when gh-models is absent', async () => {
-      mockExecFileAsync.mockResolvedValue({ stdout: 'github/gh-aw  AW  1.0.0\n', stderr: '' })
+    it('checkCopilotCLI returns false when the command is unavailable', async () => {
+      mockExecFileAsync.mockRejectedValue(new Error('copilot not found'))
 
-      const result = await bridge.checkModelsExtension()
-      expect(result).toBe(false)
-    })
-
-    it('checkModelsExtension returns false when extension list fails', async () => {
-      mockExecFileAsync.mockRejectedValue(new Error('gh not found'))
-
-      const result = await bridge.checkModelsExtension()
+      const result = await bridge.checkCopilotCLI()
       expect(result).toBe(false)
     })
 
@@ -1708,7 +1806,7 @@ describe('GhBridge', () => {
     })
 
     it('checkAwExtension returns false when gh-aw is absent', async () => {
-      mockExecFileAsync.mockResolvedValue({ stdout: 'github/gh-models  Models  1.0.0\n', stderr: '' })
+      mockExecFileAsync.mockResolvedValue({ stdout: 'github/other-extension  Other  1.0.0\n', stderr: '' })
 
       const result = await bridge.checkAwExtension()
       expect(result).toBe(false)
@@ -1766,14 +1864,17 @@ describe('GhBridge', () => {
       expect(result).toBe('response from stderr')
     })
 
-    it('passes prompt as argument to gh models run', async () => {
+    it('passes the prompt to Copilot with tools disabled', async () => {
       mockExecFileAsync.mockResolvedValue({ stdout: 'ok', stderr: '' })
 
       await bridge.runAIModel('test prompt')
+      expect(mockExecFileAsync.mock.calls[0][0]).toBe('copilot')
       const args: string[] = mockExecFileAsync.mock.calls[0][1] as string[]
-      expect(args).toContain('models')
-      expect(args).toContain('run')
+      expect(args).toContain('-p')
       expect(args).toContain('test prompt')
+      expect(args).toContain('--silent')
+      expect(args).toContain('--available-tools=')
+      expect(args).toContain('--disable-builtin-mcps')
     })
 
     it('logs the command on success', async () => {
@@ -1783,7 +1884,7 @@ describe('GhBridge', () => {
       const log = bridge.getCommandLog()
       expect(log).toHaveLength(1)
       expect(log[0].exitCode).toBe(0)
-      expect(log[0].command).toContain('models run')
+      expect(log[0].command).toContain('copilot -p')
     })
 
     it('throws rate limit error on 429 message', async () => {
@@ -1814,18 +1915,18 @@ describe('GhBridge', () => {
       await expect(bridge.runAIModel('prompt')).rejects.toThrow('authentication failed')
     })
 
-    it('throws auth error on "not found" message', async () => {
-      const err = Object.assign(new Error('not found'), { code: 1, stdout: '', stderr: 'model not found' })
+    it('throws an installation error when Copilot is unavailable', async () => {
+      const err = Object.assign(new Error('spawn copilot ENOENT'), { code: 'ENOENT', stdout: '', stderr: '' })
       mockExecFileAsync.mockRejectedValue(err)
 
-      await expect(bridge.runAIModel('prompt')).rejects.toThrow('authentication failed')
+      await expect(bridge.runAIModel('prompt')).rejects.toThrow('not installed')
     })
 
     it('throws generic AI model error for other failures', async () => {
       const err = Object.assign(new Error('unexpected'), { code: 1, stdout: '', stderr: 'something went wrong' })
       mockExecFileAsync.mockRejectedValue(err)
 
-      await expect(bridge.runAIModel('prompt')).rejects.toThrow('AI model error')
+      await expect(bridge.runAIModel('prompt')).rejects.toThrow('GitHub Copilot error')
     })
 
     it('logs the command on failure', async () => {
@@ -1911,7 +2012,7 @@ describe('GhBridge', () => {
         if (args[0] === 'api' && args.some(a => a.includes('user'))) {
           return { stdout: JSON.stringify({ login: 'maintainer' }), stderr: '' }
         }
-        if (args[0] === 'models') {
+        if (_cmd === 'copilot') {
           return { stdout: '## Recap: Jan 1 – Jan 15\n\nSome activity happened.', stderr: '' }
         }
         return { stdout: '[]', stderr: '' }
@@ -1919,8 +2020,8 @@ describe('GhBridge', () => {
 
       const result = await bridge.generateRecap(['owner/repo'], {})
       expect(result.markdown).toContain('Recap')
-      // Should have called models run
-      const modelCalls = (mockExecFileAsync.mock.calls as string[][]).filter(c => c[1]?.[0] === 'models')
+      // Should have called standalone Copilot CLI
+      const modelCalls = mockExecFileAsync.mock.calls.filter(c => c[0] === 'copilot')
       expect(modelCalls.length).toBeGreaterThan(0)
     })
   })

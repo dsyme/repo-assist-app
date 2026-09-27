@@ -24,7 +24,7 @@ import {
   TagIcon,
 } from '@primer/octicons-react'
 import { marked } from 'marked'
-import { IssueDetail, PRDetail, PRCheck, PRTimelineEvent, PRBranchStatus } from '@shared/types'
+import { IssueDetail, RepoPR, PRDetail, PRCheck, PRTimelineEvent, PRBranchStatus } from '@shared/types'
 import { sanitizeHtml } from '../utils/sanitize'
 import { parsePatchInstructions } from '../utils/parse-patch-instructions'
 
@@ -133,9 +133,10 @@ interface DetailPanelProps {
   onClose: () => void
   onMerged?: () => void
   onIssueClosed?: () => void
+  onPRUpdate?: (updates: Partial<RepoPR>) => void
 }
 
-export function DetailPanel({ type, repo, number, writeMode, onClose, onMerged, onIssueClosed }: DetailPanelProps) {
+export function DetailPanel({ type, repo, number, writeMode, onClose, onMerged, onIssueClosed, onPRUpdate }: DetailPanelProps) {
   const [issueDetail, setIssueDetail] = useState<IssueDetail | null>(null)
   const [prDetail, setPrDetail] = useState<PRDetail | null>(null)
   const [prDiff, setPrDiff] = useState<string | null>(null)
@@ -430,9 +431,10 @@ export function DetailPanel({ type, repo, number, writeMode, onClose, onMerged, 
     try {
       await window.repoAssist.markPRReady(repo, number)
       setActionStatus(writeMode ? 'Marked as ready!' : 'Mark ready logged (dry-run, read-only mode)')
+      onPRUpdate?.({ isDraft: false })
       // Refresh detail and list data
       const detail = await window.repoAssist.getPRDetail(repo, number)
-      setPrDetail(detail)
+      setPrDetail(detail ? { ...detail, isDraft: false } : detail)
     } catch (err) {
       setActionStatus(`Failed: ${err}`)
     }
@@ -466,9 +468,10 @@ export function DetailPanel({ type, repo, number, writeMode, onClose, onMerged, 
     try {
       await window.repoAssist.approvePR(repo, number)
       setActionStatus(writeMode ? 'PR approved!' : 'Approval logged (dry-run, read-only mode)')
+      onPRUpdate?.({ reviewDecision: 'APPROVED' })
       // Refresh to pick up the new review
       const detail = await window.repoAssist.getPRDetail(repo, number)
-      setPrDetail(detail)
+      setPrDetail(detail ? { ...detail, reviewDecision: 'APPROVED' } : detail)
     } catch (err) {
       setActionStatus(`Failed: ${err}`)
     }

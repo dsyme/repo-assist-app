@@ -11,6 +11,7 @@ import { CommandLog } from './components/CommandLog'
 import { AutomationsList } from './components/AutomationsList'
 import { DetailPanel } from './components/DetailPanel'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { isExternalNavigationModifier } from './utils/github-navigation'
 import './styles/app.css'
 
 interface RepoData {
@@ -30,6 +31,8 @@ export default function App() {
   const [ptalInitialized, setPtalInitialized] = useState(false)
   // Keys cleared this session — prevents in-flight scans from resurrecting dismissed items
   const ptalClearedKeysRef = useRef<Set<string>>(new Set())
+  // Successful ready transitions may briefly precede GitHub's read-side update.
+  const readyPRKeysRef = useRef<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [storagePrompt, setStoragePrompt] = useState(false)
@@ -245,6 +248,42 @@ export default function App() {
     setPtalItems(prev => prev.filter(i => i.key !== key))
   }, [])
 
+  const handlePRUpdate = useCallback((repo: string, prNumber: number, updates: Partial<RepoPR>) => {
+    if (updates.isDraft === false) {
+      readyPRKeysRef.current.add(`${repo}#${prNumber}`)
+    }
+    setRepoData(prev => {
+      const data = prev[repo]
+      if (!data) return prev
+      return {
+        ...prev,
+        [repo]: {
+          ...data,
+          prs: data.prs.map(pr => pr.number === prNumber ? { ...pr, ...updates } : pr),
+        },
+      }
+    })
+    if (updates.state === 'MERGED' || updates.state === 'CLOSED') {
+      removePTALForPR(repo, prNumber)
+    }
+  }, [removePTALForPR])
+
+  const handleWorkflowRunsApproved = useCallback((runIds: number[]) => {
+    const approved = new Set(runIds)
+    setRepoData(prev => Object.fromEntries(
+      Object.entries(prev).map(([repo, data]) => [
+        repo,
+        {
+          ...data,
+          prs: data.prs.map(pr => ({
+            ...pr,
+            workflowRunIdsAwaitingApproval: pr.workflowRunIdsAwaitingApproval.filter(runId => !approved.has(runId)),
+          })),
+        },
+      ])
+    ))
+  }, [])
+
   /** Explicitly re-fetch issues & PRs for a repo (user-triggered refresh) */
   const handleRefreshRepo = useCallback(async (repo: string) => {
     setRepoData(prev => ({ ...prev, [repo]: { ...prev[repo], loading: true } }))
@@ -253,7 +292,13 @@ export default function App() {
         window.repoAssist.getIssues(repo),
         window.repoAssist.getPRs(repo),
       ])
-      setRepoData(prev => ({ ...prev, [repo]: { issues, prs, loading: false } }))
+      const reconciledPRs = prs.map(pr => {
+        const key = `${repo}#${pr.number}`
+        if (!readyPRKeysRef.current.has(key)) return pr
+        if (!pr.isDraft) readyPRKeysRef.current.delete(key)
+        return { ...pr, isDraft: false }
+      })
+      setRepoData(prev => ({ ...prev, [repo]: { issues, prs: reconciledPRs, loading: false } }))
     } catch {
       setRepoData(prev => ({ ...prev, [repo]: { ...prev[repo], loading: false } }))
     }
@@ -262,7 +307,7 @@ export default function App() {
   }, [refreshPTAL])
 
   // Global click handler: intercept GitHub issue/PR links
-  // Normal click = navigate internally, Shift+click = open in browser
+  // Normal click = navigate internally, modified click = open in browser
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       // Walk up from click target to find closest <a>
@@ -284,8 +329,7 @@ export default function App() {
       const [, linkRepo, linkType, linkNum] = match
       const number = parseInt(linkNum, 10)
 
-      if (e.shiftKey) {
-        // Shift+click: open externally
+      if (isExternalNavigationModifier(e)) {
         window.repoAssist.openExternal(href)
         return
       }
@@ -402,13 +446,16 @@ export default function App() {
               loading={ptalLoading}
               initialized={ptalInitialized}
               repoData={repoData}
+              isUnread={isUnread}
+              onMarkRead={handleMarkRead}
               onClear={handleClearPTAL}
               onRefresh={() => refreshPTAL()}
               onNavigate={(target) => {
                 returnNavRef.current = { ...nav }
                 setNav(target)
               }}
-              onPRStateChange={(repo, prNumber) => removePTALForPR(repo, prNumber)}
+              onPRUpdate={handlePRUpdate}
+              onWorkflowRunsApproved={handleWorkflowRunsApproved}
             />
           )}
           {nav.section === 'commands' && (
@@ -432,7 +479,8 @@ export default function App() {
               loading={repoData[nav.repo].loading}
               onSelectItem={(num: number) => setNav(prev => ({ ...prev, selectedItem: num }))}
               onRefresh={() => handleRefreshRepo(nav.repo!)}
-              onPRStateChange={(prNumber: number) => removePTALForPR(nav.repo!, prNumber)}
+              onPRUpdate={(prNumber, updates) => handlePRUpdate(nav.repo!, prNumber, updates)}
+              onWorkflowRunsApproved={handleWorkflowRunsApproved}
             />
           )}
           {nav.repo && nav.repoSection === 'automations' && (
@@ -449,13 +497,16 @@ export default function App() {
               initialized={ptalInitialized}
               filterRepo={nav.repo}
               repoData={repoData}
+              isUnread={isUnread}
+              onMarkRead={handleMarkRead}
               onClear={handleClearPTAL}
               onRefresh={() => refreshPTAL()}
               onNavigate={(target) => {
                 returnNavRef.current = { ...nav }
                 setNav(target)
               }}
-              onPRStateChange={(repo, prNumber) => removePTALForPR(repo, prNumber)}
+              onPRUpdate={handlePRUpdate}
+              onWorkflowRunsApproved={handleWorkflowRunsApproved}
             />
           )}
           {/* Detail view for selected issue or PR */}
@@ -504,6 +555,7 @@ export default function App() {
                   // Remove from PTAL items
                   removePTALForPR(mergedRepo, mergedNumber)
                 }}
+                onPRUpdate={(updates) => handlePRUpdate(nav.repo!, nav.selectedItem!, updates)}
               />
             </ErrorBoundary>
           )}

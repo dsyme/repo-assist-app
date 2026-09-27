@@ -3,8 +3,9 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { execSync, spawn, execFileSync } from 'child_process'
-import { GhBridge } from './gh-bridge'
+import { GhBridge, isIgnoredIssueTitle } from './gh-bridge'
 import { LocalState } from './local-state'
+import type { PTALItem } from '../shared/types'
 
 // Logging helper — writes to stdout so it shows up in the terminal for `npm run dev`
 function log(level: 'info' | 'warn' | 'error', ...args: unknown[]): void {
@@ -30,11 +31,28 @@ process.on('unhandledRejection', (reason) => {
 // WSL2 compatibility: disable sandbox if running under WSLg
 if (process.platform === 'linux') {
   app.commandLine.appendSwitch('no-sandbox')
+  if (process.env.REPO_ASSIST_DISABLE_SHARED_MEMORY === '1' || !fs.existsSync('/dev/shm')) {
+    app.commandLine.appendSwitch('disable-dev-shm-usage')
+    app.commandLine.appendSwitch('no-zygote')
+    app.disableHardwareAcceleration()
+  }
 }
 
 let mainWindow: BrowserWindow | null = null
 const ghBridge = new GhBridge()
 const localState = new LocalState()
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  })
+}
 
 /** Detect if running in WSL */
 function isWSL(): boolean {
@@ -111,6 +129,7 @@ function createWindow(): void {
     height: 900,
     minWidth: 900,
     minHeight: 600,
+    show: false,
     title: '🌈 Repo Assist',
     autoHideMenuBar: true,
     webPreferences: {
@@ -122,10 +141,22 @@ function createWindow(): void {
     }
   })
 
-  // In dev, load from Vite dev server; in prod, load the built HTML
-  if (process.env.NODE_ENV === 'development') {
-    log('info', 'Loading dev server at http://localhost:5173')
-    mainWindow.loadURL('http://localhost:5173/src/renderer/index.html')
+  mainWindow.webContents.on('preload-error', (_event, preloadPath, error) => {
+    log('error', `Preload failed at ${preloadPath}:`, error)
+  })
+
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (!mainWindow) return
+    mainWindow.show()
+    mainWindow.focus()
+    log('info', `Main window shown (visible: ${mainWindow.isVisible()})`)
+  })
+
+  // electron-vite provides the actual dev-server URL, including a fallback port.
+  const rendererUrl = process.env.ELECTRON_RENDERER_URL
+  if (rendererUrl) {
+    log('info', `Loading dev server at ${rendererUrl}`)
+    mainWindow.loadURL(rendererUrl)
     // Open DevTools in dev for easier debugging
     mainWindow.webContents.openDevTools({ mode: 'bottom' })
   } else {
@@ -205,12 +236,8 @@ ipcHandle('gh:exec', async (command: unknown) => {
   return ghBridge.exec(command as string)
 })
 
-ipcHandle('gh:checkModelsExtension', async () => {
-  return ghBridge.checkModelsExtension()
-})
-
-ipcHandle('gh:installModelsExtension', async () => {
-  return ghBridge.installModelsExtension()
+ipcHandle('gh:checkCopilotCLI', async () => {
+  return ghBridge.checkCopilotCLI()
 })
 
 ipcHandle('gh:getRepos', async () => {
@@ -613,6 +640,18 @@ ipcHandle('gh:approvePR', async (repo: unknown, number: unknown) => {
   return result
 })
 
+ipcHandle('gh:approveWorkflowRuns', async (repo: unknown, runIds: unknown) => {
+  if (!Array.isArray(runIds) || !runIds.every(runId => Number.isSafeInteger(runId) && runId > 0)) {
+    throw new Error('Workflow run IDs must be positive integers')
+  }
+  const writeMode = localState.getWriteMode()
+  const result = await ghBridge.approveWorkflowRuns(repo as string, runIds as number[], writeMode)
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderr || `Workflow approval failed (exit code ${result.exitCode})`)
+  }
+  return result
+})
+
 ipcHandle('gh:requestReview', async (repo: unknown, number: unknown, reviewer: unknown) => {
   const writeMode = localState.getWriteMode()
   const result = await ghBridge.requestReview(repo as string, number as number, reviewer as string, writeMode)
@@ -665,7 +704,9 @@ ipcHandle('ptal:scan', async (repos: unknown) => {
 })
 
 ipcHandle('ptal:getCache', async () => {
-  return localState.getPTALCache()
+  return (localState.getPTALCache() as PTALItem[]).filter(
+    item => item.type !== 'issue' || !isIgnoredIssueTitle(item.title)
+  )
 })
 
 ipcHandle('ptal:clear', async (key: unknown, activityId: unknown) => {

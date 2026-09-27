@@ -18,9 +18,16 @@ root.render(
   <React.StrictMode>
     <ThemeProvider colorMode="auto">
       <BaseStyles>
-        <ErrorBoundary>
-          <App />
-        </ErrorBoundary>
+        {window.repoAssist ? (
+          <ErrorBoundary>
+            <App />
+          </ErrorBoundary>
+        ) : (
+          <div className="bridge-error">
+            <h1>Repo Assist desktop bridge unavailable</h1>
+            <p>This interface must be opened by the Electron app. Close this browser tab and start Repo Assist with <code>npm run dev</code>.</p>
+          </div>
+        )}
       </BaseStyles>
     </ThemeProvider>
   </React.StrictMode>

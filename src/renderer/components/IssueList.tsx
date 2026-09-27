@@ -1,7 +1,9 @@
 import { useMemo } from 'react'
-import { Text, ActionList, Label, CounterLabel, RelativeTime, Button } from '@primer/react'
-import { IssueOpenedIcon, IssueClosedIcon, CommentIcon, SyncIcon } from '@primer/octicons-react'
+import { ActionList, Label, CounterLabel, Button } from '@primer/react'
+import { SyncIcon } from '@primer/octicons-react'
 import { RepoIssue } from '@shared/types'
+import { openGitHubItemOnModifierClick } from '../utils/github-navigation'
+import { IssueItemRow } from './IssueItemRow'
 
 interface IssueListProps {
   repo: string
@@ -23,7 +25,8 @@ export function IssueList({ repo, issues, isUnread, onMarkRead, onSelectItem, on
     return Object.entries(groups).sort((a, b) => b[1].length - a[1].length)
   }, [issues])
 
-  const handleClick = (issueNumber: number) => {
+  const handleClick = (event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>, issueNumber: number) => {
+    if (openGitHubItemOnModifierClick(event, repo, 'issue', issueNumber)) return
     onMarkRead(`${repo}#${issueNumber}`)
     onSelectItem(issueNumber)
   }
@@ -59,37 +62,12 @@ export function IssueList({ repo, issues, isUnread, onMarkRead, onSelectItem, on
               {groupIssues.map(issue => {
                 const unread = isUnread(repo, issue.number, issue.updatedAt)
                 return (
-                  <ActionList.Item
+                  <IssueItemRow
                     key={issue.number}
-                    onClick={() => handleClick(issue.number)}
-                  >
-                    <ActionList.LeadingVisual>
-                      {issue.state === 'closed'
-                        ? <IssueClosedIcon size={16} className="gh-icon-closed-issue" />
-                        : <IssueOpenedIcon size={16} className="gh-icon-open" />
-                      }
-                    </ActionList.LeadingVisual>
-                    <div className="issue-row">
-                      <Text weight={unread ? 'semibold' : 'normal'}>
-                        #{issue.number} {issue.title}
-                      </Text>
-                      <div className="issue-meta">
-                        <Text size="small" style={{ color: 'var(--fgColor-muted)' }}>
-                          by {issue.author?.login ?? 'unknown'}
-                        </Text>
-                        <RelativeTime date={new Date(issue.updatedAt)} />
-                        {issue.labels?.slice(1).map(l => (
-                          <Label key={l.name} size="small">{l.name}</Label>
-                        ))}
-                      </div>
-                    </div>
-                    <ActionList.TrailingVisual>
-                      <span className="sidebar-item-row">
-                        <CommentIcon size={12} />
-                        <Text size="small">{Array.isArray(issue.comments) ? issue.comments.length : 0}</Text>
-                      </span>
-                    </ActionList.TrailingVisual>
-                  </ActionList.Item>
+                    issue={issue}
+                    unread={unread}
+                    onSelect={(event) => handleClick(event, issue.number)}
+                  />
                 )
               })}
             </ActionList>

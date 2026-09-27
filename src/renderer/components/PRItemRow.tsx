@@ -13,6 +13,7 @@ import {
   NoEntryIcon,
 } from '@primer/octicons-react'
 import { RepoPR, PRBranchStatus } from '@shared/types'
+import { isInteractiveNavigationTarget } from '../utils/github-navigation'
 
 // --- Shared hook: manages branch status, permissions, overrides, and action handlers ---
 
@@ -21,15 +22,16 @@ export interface PRListActionsState {
   branchStatus: Record<number, PRBranchStatus>
   repoPermission: string | null
   viewerLogin: string | null
-  localOverrides: Record<number, Partial<RepoPR>>
   markingReady: number | null
   updatingBranch: number | null
   approvingPR: number | null
+  approvingWorkflowRuns: number | null
   mergingPR: number | null
   closingPR: number | null
   handleMarkReady: (e: React.MouseEvent, prNumber: number) => void
   handleUpdateBranch: (e: React.MouseEvent, prNumber: number) => void
   handleApprovePR: (e: React.MouseEvent, prNumber: number) => void
+  handleApproveWorkflowRuns: (e: React.MouseEvent, prNumber: number, runIds: number[]) => void
   handleMergePR: (e: React.MouseEvent, prNumber: number, bypass?: boolean) => void
   handleClosePR: (e: React.MouseEvent, prNumber: number) => void
 }
@@ -37,14 +39,14 @@ export interface PRListActionsState {
 export function usePRListActions(
   repo: string,
   prs: RepoPR[],
-  onPRStateChange?: (prNumber: number) => void,
+  onPRUpdate?: (prNumber: number, updates: Partial<RepoPR>) => void,
 ): PRListActionsState {
   const [markingReady, setMarkingReady] = useState<number | null>(null)
   const [updatingBranch, setUpdatingBranch] = useState<number | null>(null)
   const [approvingPR, setApprovingPR] = useState<number | null>(null)
+  const [approvingWorkflowRuns, setApprovingWorkflowRuns] = useState<number | null>(null)
   const [mergingPR, setMergingPR] = useState<number | null>(null)
   const [closingPR, setClosingPR] = useState<number | null>(null)
-  const [localOverrides, setLocalOverrides] = useState<Record<number, Partial<RepoPR>>>({})
   const [branchStatus, setBranchStatus] = useState<Record<number, PRBranchStatus>>({})
   const branchStatusFetched = useRef<Set<string>>(new Set())
   const [repoPermission, setRepoPermission] = useState<string | null>(null)
@@ -52,12 +54,11 @@ export function usePRListActions(
   const [viewerLogin, setViewerLogin] = useState<string | null>(null)
   const viewerLoginFetched = useRef(false)
 
-  // Clear optimistic overrides and branch cache when fresh data arrives
+  // Clear the branch cache when fresh PR data arrives
   const prevPrsRef = useRef(prs)
   useEffect(() => {
     if (prs !== prevPrsRef.current) {
       prevPrsRef.current = prs
-      setLocalOverrides({})
       branchStatusFetched.current = new Set()
       setBranchStatus({})
     }
@@ -98,11 +99,11 @@ export function usePRListActions(
     setMarkingReady(prNumber)
     try {
       await window.repoAssist.markPRReady(repo, prNumber)
-      setLocalOverrides(prev => ({ ...prev, [prNumber]: { isDraft: false } }))
+      onPRUpdate?.(prNumber, { isDraft: false })
     } finally {
       setMarkingReady(null)
     }
-  }, [repo])
+  }, [repo, onPRUpdate])
 
   const handleUpdateBranch = useCallback(async (e: React.MouseEvent, prNumber: number) => {
     e.stopPropagation()
@@ -125,40 +126,49 @@ export function usePRListActions(
     setApprovingPR(prNumber)
     try {
       await window.repoAssist.approvePR(repo, prNumber)
-      setLocalOverrides(prev => ({ ...prev, [prNumber]: { reviewDecision: 'APPROVED' } }))
+      onPRUpdate?.(prNumber, { reviewDecision: 'APPROVED' })
     } finally {
       setApprovingPR(null)
     }
-  }, [repo])
+  }, [repo, onPRUpdate])
+
+  const handleApproveWorkflowRuns = useCallback(async (e: React.MouseEvent, prNumber: number, runIds: number[]) => {
+    e.stopPropagation()
+    setApprovingWorkflowRuns(prNumber)
+    try {
+      await window.repoAssist.approveWorkflowRuns(repo, runIds)
+      onPRUpdate?.(prNumber, { workflowRunIdsAwaitingApproval: [] })
+    } finally {
+      setApprovingWorkflowRuns(null)
+    }
+  }, [repo, onPRUpdate])
 
   const handleMergePR = useCallback(async (e: React.MouseEvent, prNumber: number, bypass: boolean = false) => {
     e.stopPropagation()
     setMergingPR(prNumber)
     try {
       await window.repoAssist.mergePR(repo, prNumber, bypass)
-      setLocalOverrides(prev => ({ ...prev, [prNumber]: { state: 'MERGED' } }))
-      onPRStateChange?.(prNumber)
+      onPRUpdate?.(prNumber, { state: 'MERGED' })
     } finally {
       setMergingPR(null)
     }
-  }, [repo, onPRStateChange])
+  }, [repo, onPRUpdate])
 
   const handleClosePR = useCallback(async (e: React.MouseEvent, prNumber: number) => {
     e.stopPropagation()
     setClosingPR(prNumber)
     try {
-      await window.repoAssist.exec(`pr close ${prNumber} -R ${repo}`)
-      setLocalOverrides(prev => ({ ...prev, [prNumber]: { state: 'CLOSED', isDraft: false } }))
-      onPRStateChange?.(prNumber)
+      await window.repoAssist.closePR(repo, prNumber)
+      onPRUpdate?.(prNumber, { state: 'CLOSED', isDraft: false })
     } finally {
       setClosingPR(null)
     }
-  }, [repo, onPRStateChange])
+  }, [repo, onPRUpdate])
 
   return {
-    repo, branchStatus, repoPermission, viewerLogin, localOverrides,
-    markingReady, updatingBranch, approvingPR, mergingPR, closingPR,
-    handleMarkReady, handleUpdateBranch, handleApprovePR, handleMergePR, handleClosePR,
+    repo, branchStatus, repoPermission, viewerLogin,
+    markingReady, updatingBranch, approvingPR, approvingWorkflowRuns, mergingPR, closingPR,
+    handleMarkReady, handleUpdateBranch, handleApprovePR, handleApproveWorkflowRuns, handleMergePR, handleClosePR,
   }
 }
 
@@ -183,14 +193,17 @@ export function CICheckIcons({ pr }: { pr: RepoPR }) {
 interface PRItemRowProps {
   pr: RepoPR
   actions: PRListActionsState
-  onSelect: () => void
+  onSelect: (event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>) => void
+  className?: string
+  style?: React.CSSProperties
+  trailingVisual?: React.ReactNode
 }
 
-export function PRItemRow({ pr, actions, onSelect }: PRItemRowProps) {
+export function PRItemRow({ pr, actions, onSelect, className, style, trailingVisual }: PRItemRowProps) {
   const {
     repo, branchStatus, repoPermission, viewerLogin,
-    markingReady, updatingBranch, approvingPR, mergingPR, closingPR,
-    handleMarkReady, handleUpdateBranch, handleApprovePR, handleMergePR, handleClosePR,
+    markingReady, updatingBranch, approvingPR, approvingWorkflowRuns, mergingPR, closingPR,
+    handleMarkReady, handleUpdateBranch, handleApprovePR, handleApproveWorkflowRuns, handleMergePR, handleClosePR,
   } = actions
 
   const isBot = pr.labels?.some(l => l.name === 'repo-assist')
@@ -201,9 +214,17 @@ export function PRItemRow({ pr, actions, onSelect }: PRItemRowProps) {
   const viewerHasApproved = viewerLogin
     ? pr.latestReviews?.some(r => r.author?.login === viewerLogin && r.state === 'APPROVED') ?? false
     : false
+  const handleSelect = (event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>) => {
+    if (isInteractiveNavigationTarget(event)) return
+    onSelect(event)
+  }
 
   return (
-    <ActionList.Item onSelect={onSelect}>
+    <ActionList.Item
+      onSelect={handleSelect}
+      className={className}
+      style={style}
+    >
       <ActionList.LeadingVisual>
         {pr.state === 'MERGED'
           ? <GitMergeIcon size={16} className="gh-icon-merged" />
@@ -225,12 +246,28 @@ export function PRItemRow({ pr, actions, onSelect }: PRItemRowProps) {
           {isBot && (
             <Label variant="accent">🤖 Repo Assist</Label>
           )}
+          {!pr.isDraft && open && (
+            <Label variant="success">Ready</Label>
+          )}
           <Text size="small" style={{ color: 'var(--fgColor-muted)' }}>
             by {pr.author?.login ?? 'unknown'}
           </Text>
           <RelativeTime date={new Date(pr.updatedAt)} />
           {/* Inline action buttons */}
           <span className="pr-action-buttons">
+            {open && pr.workflowRunIdsAwaitingApproval.length > 0 && (
+              <button
+                className="pr-action-btn pr-action-attention"
+                title={`Approve ${pr.workflowRunIdsAwaitingApproval.length} workflow run${pr.workflowRunIdsAwaitingApproval.length === 1 ? '' : 's'} to start`}
+                onClick={(e) => handleApproveWorkflowRuns(e, pr.number, pr.workflowRunIdsAwaitingApproval)}
+                disabled={approvingWorkflowRuns === pr.number}
+              >
+                {approvingWorkflowRuns === pr.number
+                  ? <Spinner size="small" />
+                  : <><CheckCircleIcon size={14} /> <span className="pr-action-label">Approve workflows</span></>
+                }
+              </button>
+            )}
             {behind && open && (
               <button
                 className="pr-action-btn pr-action-attention"
@@ -323,6 +360,9 @@ export function PRItemRow({ pr, actions, onSelect }: PRItemRowProps) {
           </span>
         </div>
       </div>
+      {trailingVisual && (
+        <ActionList.TrailingVisual>{trailingVisual}</ActionList.TrailingVisual>
+      )}
     </ActionList.Item>
   )
 }

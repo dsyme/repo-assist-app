@@ -15,6 +15,11 @@ import type {
 } from '../shared/types'
 
 const execFileAsync = promisify(execFile)
+const IGNORED_ISSUE_TITLES = new Set([
+  '[aw] repo assist failed',
+  '[aw] detection runs',
+  '[aw] failed jobs: repo assist',
+])
 
 interface CommandLogEntry {
   command: string
@@ -164,7 +169,8 @@ export class GhBridge {
     )
     if (result.exitCode !== 0) return []
     try {
-      return JSON.parse(result.stdout) as RepoIssue[]
+      const issues = JSON.parse(result.stdout) as RepoIssue[]
+      return issues.filter(issue => !isIgnoredIssueTitle(issue.title))
     } catch {
       return []
     }
@@ -175,11 +181,38 @@ export class GhBridge {
       `pr list -R ${repo} --json number,title,author,state,isDraft,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup,latestReviews,createdAt,updatedAt,labels,headRefName,baseRefName --limit 50 --state open`
     )
     if (result.exitCode !== 0) return []
+    let prs: Omit<RepoPR, 'workflowRunIdsAwaitingApproval'>[]
     try {
-      return JSON.parse(result.stdout) as RepoPR[]
+      prs = JSON.parse(result.stdout) as Omit<RepoPR, 'workflowRunIdsAwaitingApproval'>[]
     } catch {
       return []
     }
+
+    const runIdsByPR = new Map<number, number[]>()
+    const pendingRuns = await this.exec(
+      `api "repos/${repo}/actions/runs?status=action_required&event=pull_request&per_page=100" --paginate --jq ".workflow_runs[] | {id, pull_requests}"`
+    )
+    if (pendingRuns.exitCode === 0) {
+      try {
+        const runs = pendingRuns.stdout.trim().split('\n').filter(Boolean).map(line =>
+          JSON.parse(line) as { id: number; pull_requests?: { number: number }[] }
+        )
+        for (const run of runs) {
+          for (const pr of run.pull_requests ?? []) {
+            const runIds = runIdsByPR.get(pr.number) ?? []
+            runIds.push(run.id)
+            runIdsByPR.set(pr.number, runIds)
+          }
+        }
+      } catch {
+        runIdsByPR.clear()
+      }
+    }
+
+    return prs.map(pr => ({
+      ...pr,
+      workflowRunIdsAwaitingApproval: runIdsByPR.get(pr.number) ?? [],
+    }))
   }
 
   async getRuns(repo: string): Promise<RepoRun[]> {
@@ -206,7 +239,8 @@ export class GhBridge {
     )
     if (result.exitCode !== 0) return null
     try {
-      return JSON.parse(result.stdout) as IssueDetail
+      const issue = JSON.parse(result.stdout) as IssueDetail
+      return isIgnoredIssueTitle(issue.title) ? null : issue
     } catch {
       return null
     }
@@ -296,6 +330,58 @@ export class GhBridge {
   async approvePR(repo: string, number: number, writeMode: boolean): Promise<GhExecResult> {
     const command = `pr review ${number} -R ${repo} --approve`
     return this.execWriteOrDryRun(command, writeMode, '[DRY RUN] PR would be approved')
+  }
+
+  /** Approve pending workflow runs created by pull requests from first-time contributors. */
+  async approveWorkflowRuns(repo: string, runIds: number[], writeMode: boolean): Promise<GhExecResult> {
+    if (runIds.length === 0) {
+      return {
+        stdout: '',
+        stderr: 'No workflow runs are awaiting approval',
+        exitCode: 1,
+        command: '',
+        durationMs: 0,
+      }
+    }
+
+    const results: GhExecResult[] = []
+    let alreadyApproved = 0
+    for (const runId of runIds) {
+      const result = await this.execWriteOrDryRun(
+        `api repos/${repo}/actions/runs/${runId}/approve -X POST`,
+        writeMode,
+        `[DRY RUN] Workflow run ${runId} would be approved`
+      )
+      results.push(result)
+      if (result.exitCode !== 0) {
+        const current = await this.exec(
+          `api repos/${repo}/actions/runs/${runId} --jq .conclusion`
+        )
+        if (current.exitCode === 0 && current.stdout.trim() !== 'action_required') {
+          alreadyApproved++
+          continue
+        }
+        return result
+      }
+    }
+
+    const lastResult = results[results.length - 1]
+    const approved = runIds.length - alreadyApproved
+    const summary = [
+      approved > 0 ? `Approved ${approved} workflow run${approved === 1 ? '' : 's'}` : '',
+      alreadyApproved > 0
+        ? `${alreadyApproved} workflow run${alreadyApproved === 1 ? ' was' : 's were'} already approved`
+        : '',
+    ].filter(Boolean).join('; ')
+    return {
+      ...lastResult,
+      stderr: '',
+      exitCode: 0,
+      stdout: writeMode
+        ? summary
+        : results.map(result => result.stdout).join('\n'),
+      durationMs: results.reduce((total, result) => total + result.durationMs, 0),
+    }
   }
 
   /** Request a review from a GitHub user on a PR */
@@ -524,20 +610,13 @@ export class GhBridge {
     return result.stdout.trim() || 'unknown'
   }
 
-  /** Check if the gh-models extension is installed */
-  async checkModelsExtension(): Promise<boolean> {
-    return (await this.listExtensions()).includes('gh-models')
-  }
-
-  /** Install the gh-models extension */
-  async installModelsExtension(): Promise<{ success: boolean; error?: string }> {
+  /** Check if the standalone GitHub Copilot CLI is installed. */
+  async checkCopilotCLI(): Promise<boolean> {
     try {
-      await execFileAsync('gh', ['extension', 'install', 'github/gh-models'], { timeout: 60000 })
-      this.cachedExtensionList = null // invalidate cache after install
-      return { success: true }
-    } catch (err: unknown) {
-      const error = err as { stderr?: string }
-      return { success: false, error: error.stderr || String(err) }
+      await execFileAsync('copilot', ['--version'], { timeout: 10000 })
+      return true
+    } catch {
+      return false
     }
   }
 
@@ -577,45 +656,63 @@ export class GhBridge {
 
   // === AI Model ===
 
-  /** Run an AI model via `gh models run`. Returns output text or throws. */
+  /** Run one-shot inference via the standalone GitHub Copilot CLI. */
   async runAIModel(prompt: string): Promise<string> {
     const startedAt = new Date().toISOString()
     const start = Date.now()
+    const command = 'copilot -p <prompt> --silent --available-tools='
     try {
-      const { stdout, stderr } = await execFileAsync('gh', ['models', 'run', 'openai/gpt-4o-mini', prompt], {
-        timeout: 60000,
+      const { stdout, stderr } = await execFileAsync('copilot', [
+        '-p',
+        prompt,
+        '--silent',
+        '--no-color',
+        '--no-custom-instructions',
+        '--disable-builtin-mcps',
+        '--available-tools=',
+        '--allow-all-tools',
+        '--no-ask-user',
+        '--no-auto-update',
+        '--no-remote',
+        '--no-remote-export',
+        '--output-format',
+        'text',
+      ], {
+        timeout: 120000,
         maxBuffer: 10 * 1024 * 1024,
       })
       const durationMs = Date.now() - start
       this.addToLog({
-        command: 'gh models run openai/gpt-4o-mini <prompt>',
+        command,
         startedAt,
         durationMs,
         exitCode: 0,
         mode: 'read',
       })
-      // gh models run may output to stderr as well on some versions
       return (stdout || stderr || '').trim()
     } catch (err: unknown) {
       const durationMs = Date.now() - start
-      const error = err as { stdout?: string; stderr?: string; code?: number }
+      const error = err as { stdout?: string; stderr?: string; code?: number | string }
+      const exitCode = typeof error.code === 'number' ? error.code : 1
       this.addToLog({
-        command: 'gh models run openai/gpt-4o-mini <prompt>',
+        command,
         startedAt,
         durationMs,
-        exitCode: error.code ?? 1,
+        exitCode,
         mode: 'read',
         stderr: error.stderr,
       })
-      // Extract meaningful error message
-      const msg = error.stderr || String(err)
+      const msg = error.stderr || error.stdout || String(err)
+      if (error.code === 'ENOENT' || String(err).includes('ENOENT')) {
+        throw new Error('GitHub Copilot CLI is not installed. Install it and run `copilot login`.')
+      }
       if (msg.includes('rate limit') || msg.includes('429')) {
-        throw new Error('Rate limit exceeded for GitHub Models. Please try again later.')
+        throw new Error('Rate limit exceeded for GitHub Copilot. Please try again later.')
       }
-      if (msg.includes('auth') || msg.includes('401') || msg.includes('403') || msg.includes('not found')) {
-        throw new Error('GitHub Models authentication failed. Run `gh auth refresh` and ensure you have access to GitHub Models.')
+      if (msg.includes('auth') || msg.includes('login') || msg.includes('401') || msg.includes('403')) {
+        throw new Error('GitHub Copilot authentication failed. Run `copilot login` and ensure your account has Copilot access.')
       }
-      throw new Error(`AI model error: ${msg.substring(0, 300)}`)
+      throw new Error(`GitHub Copilot error: ${msg.substring(0, 300)}`)
     }
   }
 
@@ -802,7 +899,7 @@ ${sections.join('\n\n')}`
     try {
       const issues = JSON.parse(result.stdout) as { number: number; title: string; author: { login: string }; closedAt: string }[]
       return issues
-        .filter(i => i.closedAt && new Date(i.closedAt) > cutoff)
+        .filter(i => !isIgnoredIssueTitle(i.title) && i.closedAt && new Date(i.closedAt) > cutoff)
         .map(i => ({ number: i.number, title: i.title, author: i.author?.login ?? 'unknown', closedAt: i.closedAt }))
     } catch {
       return []
@@ -818,7 +915,11 @@ ${sections.join('\n\n')}`
     try {
       const issues = JSON.parse(result.stdout) as { number: number; title: string; author: { login: string }; createdAt: string }[]
       return issues
-        .filter(i => new Date(i.createdAt) > cutoff && !isAutomationActor(i.author?.login ?? ''))
+        .filter(i =>
+          !isIgnoredIssueTitle(i.title) &&
+          new Date(i.createdAt) > cutoff &&
+          !isAutomationActor(i.author?.login ?? '')
+        )
         .map(i => ({ number: i.number, title: i.title, author: i.author?.login ?? 'unknown', createdAt: i.createdAt }))
     } catch {
       return []
@@ -988,6 +1089,7 @@ ${sections.join('\n\n')}`
   }
 
   private evaluateIssuePTAL(repo: string, issue: GraphQLIssueNode, clearedState: Record<string, string>): PTALItem | null {
+    if (isIgnoredIssueTitle(issue.title)) return null
     const normalizedTitle = issue.title.toLowerCase().replace(/[-_]+/g, ' ')
     if (normalizedTitle.includes('repo assist') && /month(?:ly|y) activity/.test(normalizedTitle)) return null
 
@@ -1166,6 +1268,10 @@ export function isAutomationActor(login: string): boolean {
   if (!login) return false
   return login === 'github-actions' || login === 'github-actions[bot]' ||
     login === 'app/github-actions' || login.endsWith('[bot]')
+}
+
+export function isIgnoredIssueTitle(title: string): boolean {
+  return IGNORED_ISSUE_TITLES.has(title.trim().toLowerCase())
 }
 
 /** Strip wrapping code fences (```markdown ... ```) from AI output */

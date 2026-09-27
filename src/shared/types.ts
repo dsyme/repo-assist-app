@@ -27,6 +27,7 @@ export interface RepoPR {
   updatedAt: string
   headRefName: string
   baseRefName: string
+  workflowRunIdsAwaitingApproval: number[]
 }
 
 export interface PRBranchStatus {
@@ -186,8 +187,7 @@ export interface RepoAssistAPI {
   getEvents: (repo: string) => Promise<unknown[]>
   getCommandLog: () => Promise<unknown[]>
   exec: (command: string) => Promise<unknown>
-  checkModelsExtension: () => Promise<boolean>
-  installModelsExtension: () => Promise<{ success: boolean; error?: string }>
+  checkCopilotCLI: () => Promise<boolean>
   checkAwExtension: () => Promise<boolean>
   ensureAwExtension: () => Promise<{ success: boolean; error?: string }>
   hasRepoAssistWorkflow: (repo: string) => Promise<boolean>
@@ -199,6 +199,7 @@ export interface RepoAssistAPI {
   addComment: (repo: string, number: number, body: string) => Promise<unknown>
   mergePR: (repo: string, number: number, bypass?: boolean) => Promise<unknown>
   approvePR: (repo: string, number: number) => Promise<unknown>
+  approveWorkflowRuns: (repo: string, runIds: number[]) => Promise<unknown>
   requestReview: (repo: string, number: number, reviewer: string) => Promise<unknown>
   openExternal: (url: string) => Promise<void>
   getReadState: () => Promise<Record<string, string>>

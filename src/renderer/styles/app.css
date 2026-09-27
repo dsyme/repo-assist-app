@@ -16,6 +16,16 @@ html, body, #root {
   color: #e6edf3;
 }
 
+.bridge-error {
+  max-width: 640px;
+  margin: 15vh auto 0;
+  padding: 24px;
+}
+
+.bridge-error h1 {
+  font-size: 24px;
+}
+
 /* Fix Primer Spinner animation — CSS custom properties have broken fallbacks in Primer v38 */
 :root {
   --base-duration-1000: 1s;
@@ -1189,21 +1199,18 @@ li:hover .sidebar-item-row .sidebar-remove-btn {
               padding 0.3s ease-out 0.1s, margin 0.3s ease-out 0.1s;
 }
 
-/* Ensure PTAL items have a max-height for animation */
-.ptal-row {
-  display: flex;
-  align-items: center;
+/* PTAL rows use the same list item as repo lists, with dismissal outside selection. */
+.ptal-row-container {
+  position: relative;
   max-height: 200px;
   transition: opacity 0.2s ease-out, max-height 0.3s ease-out;
 }
 
-.ptal-row > li {
-  flex: 1;
-  min-width: 0;
-}
-
 .ptal-dismiss-btn {
-  flex-shrink: 0;
+  position: absolute;
+  z-index: 2;
+  top: 6px;
+  right: 8px;
   background: none;
   border: none;
   color: var(--fgColor-muted, #8b949e);
@@ -1214,6 +1221,10 @@ li:hover .sidebar-item-row .sidebar-remove-btn {
   align-items: center;
   font-family: inherit;
   font-size: 12px;
+}
+
+.ptal-row-container > li {
+  padding-right: 42px;
 }
 
 .ptal-dismiss-btn:hover {

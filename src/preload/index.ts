@@ -39,8 +39,7 @@ contextBridge.exposeInMainWorld('repoAssist', {
   getEvents: (repo: string) => ipcRenderer.invoke('gh:getEvents', repo),
   getCommandLog: () => ipcRenderer.invoke('gh:getCommandLog'),
   exec: (command: string) => ipcRenderer.invoke('gh:exec', command),
-  checkModelsExtension: () => ipcRenderer.invoke('gh:checkModelsExtension'),
-  installModelsExtension: () => ipcRenderer.invoke('gh:installModelsExtension'),
+  checkCopilotCLI: () => ipcRenderer.invoke('gh:checkCopilotCLI'),
   checkAwExtension: () => ipcRenderer.invoke('gh:checkAwExtension'),
   ensureAwExtension: () => ipcRenderer.invoke('gh:ensureAwExtension'),
   hasRepoAssistWorkflow: (repo: string) => ipcRenderer.invoke('gh:hasRepoAssistWorkflow', repo),
@@ -54,6 +53,7 @@ contextBridge.exposeInMainWorld('repoAssist', {
   addComment: (repo: string, number: number, body: string) => ipcRenderer.invoke('gh:addComment', repo, number, body),
   mergePR: (repo: string, number: number, bypass?: boolean) => ipcRenderer.invoke('gh:mergePR', repo, number, bypass ?? false),
   approvePR: (repo: string, number: number) => ipcRenderer.invoke('gh:approvePR', repo, number),
+  approveWorkflowRuns: (repo: string, runIds: number[]) => ipcRenderer.invoke('gh:approveWorkflowRuns', repo, runIds),
   requestReview: (repo: string, number: number, reviewer: string) => ipcRenderer.invoke('gh:requestReview', repo, number, reviewer),
   openExternal: (url: string) => ipcRenderer.invoke('app:openExternal', url),
 
