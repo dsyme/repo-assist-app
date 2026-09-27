@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Text, TreeView, CounterLabel, Button, Spinner } from '@primer/react'
 import {
   RepoIcon,
@@ -42,6 +42,16 @@ export function Sidebar({ repos, repoData, nav, onNavigate, ptalItems, onAddRepo
   const [recentRepos, setRecentRepos] = useState<RepoSearchResult[]>([])
   const [loadingRecent, setLoadingRecent] = useState(false)
   const chooserRef = useRef<HTMLDivElement>(null)
+
+  // Precompute per-repo PTAL counts in one pass instead of filtering the full
+  // ptalItems array for every repo in the sidebar (was O(repos × ptalItems)).
+  const ptalCountsByRepo = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const item of ptalItems) {
+      counts.set(item.repo, (counts.get(item.repo) ?? 0) + 1)
+    }
+    return counts
+  }, [ptalItems])
 
   const toggleRepo = (repo: string) => {
     setExpandedRepos(prev => {
@@ -167,7 +177,7 @@ export function Sidebar({ repos, repoData, nav, onNavigate, ptalItems, onAddRepo
           const data = repoData[repo]
           const issueCount = data?.issues?.length ?? 0
           const prCount = data?.prs?.length ?? 0
-          const repoPtalCount = ptalItems.filter(i => i.repo === repo).length
+          const repoPtalCount = ptalCountsByRepo.get(repo) ?? 0
           const isExpanded = expandedRepos.has(repo)
 
           return (
