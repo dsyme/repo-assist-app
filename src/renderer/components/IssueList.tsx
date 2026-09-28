@@ -8,13 +8,15 @@ import { IssueItemRow } from './IssueItemRow'
 interface IssueListProps {
   repo: string
   issues: RepoIssue[]
+  writeMode: boolean
   isUnread: (repo: string, number: number, updatedAt: string) => boolean
   onMarkRead: (key: string) => void
   onSelectItem: (number: number) => void
+  onIssueClosed: (issueNumber: number) => void
   onRefresh: () => void
 }
 
-export function IssueList({ repo, issues, isUnread, onMarkRead, onSelectItem, onRefresh }: IssueListProps) {
+export function IssueList({ repo, issues, writeMode, isUnread, onMarkRead, onSelectItem, onIssueClosed, onRefresh }: IssueListProps) {
   const grouped = useMemo(() => {
     const groups: Record<string, RepoIssue[]> = {}
     for (const issue of issues) {
@@ -66,7 +68,10 @@ export function IssueList({ repo, issues, isUnread, onMarkRead, onSelectItem, on
                     key={issue.number}
                     issue={issue}
                     unread={unread}
+                    repo={repo}
+                    writeMode={writeMode}
                     onSelect={(event) => handleClick(event, issue.number)}
+                    onIssueClosed={onIssueClosed}
                   />
                 )
               })}

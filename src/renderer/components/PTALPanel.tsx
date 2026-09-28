@@ -25,16 +25,18 @@ interface PTALPanelProps {
   filterRepo?: string
   /** PR data per repo — used to render rich PR rows */
   repoData?: Record<string, { issues: RepoIssue[]; prs: RepoPR[] }>
+  writeMode: boolean
   isUnread: (repo: string, number: number, updatedAt: string) => boolean
   onMarkRead: (key: string) => void
   onClear: (item: PTALItem) => void
   onRefresh: () => void
   onNavigate: (nav: NavState) => void
+  onIssueClosed: (repo: string, issueNumber: number) => void
   onPRUpdate?: (repo: string, prNumber: number, updates: Partial<RepoPR>) => void
   onWorkflowRunsApproved: (runIds: number[]) => void
 }
 
-export function PTALPanel({ repos, items, loading, initialized, filterRepo, repoData, isUnread, onMarkRead, onClear, onRefresh, onNavigate, onPRUpdate, onWorkflowRunsApproved }: PTALPanelProps) {
+export function PTALPanel({ repos, items, loading, initialized, filterRepo, repoData, writeMode, isUnread, onMarkRead, onClear, onRefresh, onNavigate, onIssueClosed, onPRUpdate, onWorkflowRunsApproved }: PTALPanelProps) {
   // Local clearing set: tracks items mid-animation so they render with fade-out
   // before actually being removed from App state
   const [clearing, setClearing] = useState<Set<string>>(new Set())
@@ -155,10 +157,12 @@ export function PTALPanel({ repos, items, loading, initialized, filterRepo, repo
                 items={group.items}
                 repoIssues={repoData?.[group.repo]?.issues ?? []}
                 repoPRs={repoData?.[group.repo]?.prs ?? []}
+                writeMode={writeMode}
                 isUnread={isUnread}
                 clearing={clearing}
                 onClear={handleClear}
                 onItemClick={handleItemClick}
+                onIssueClosed={(number) => onIssueClosed(group.repo, number)}
                 onPRUpdate={onPRUpdate ? (number, updates) => onPRUpdate(group.repo, number, updates) : undefined}
               />
             </div>
@@ -170,15 +174,17 @@ export function PTALPanel({ repos, items, loading, initialized, filterRepo, repo
 }
 
 /** Renders a group of PTAL items for a single repo — enables the usePRListActions hook */
-function PTALRepoGroup({ repo, items, repoIssues, repoPRs, isUnread, clearing, onClear, onItemClick, onPRUpdate }: {
+function PTALRepoGroup({ repo, items, repoIssues, repoPRs, writeMode, isUnread, clearing, onClear, onItemClick, onIssueClosed, onPRUpdate }: {
   repo: string
   items: PTALItem[]
   repoIssues: RepoIssue[]
   repoPRs: RepoPR[]
+  writeMode: boolean
   isUnread: (repo: string, number: number, updatedAt: string) => boolean
   clearing: Set<string>
   onClear: (item: PTALItem) => void
   onItemClick: (event: NavigationEvent, item: PTALItem) => void
+  onIssueClosed: (issueNumber: number) => void
   onPRUpdate?: (prNumber: number, updates: Partial<RepoPR>) => void
 }) {
   // Filter to just the PRs that appear in PTAL items
@@ -232,7 +238,7 @@ function PTALRepoGroup({ repo, items, repoIssues, repoPRs, isUnread, clearing, o
               className={`ptal-row-container fade-in ${isClearing ? 'ptal-clearing' : ''}`}
               style={{ animationDelay: `${idx * 40}ms` }}
               onClickCapture={(event) => {
-                if ((event.target as HTMLElement).closest('button.ptal-dismiss-btn')) return
+                if ((event.target as HTMLElement).closest('.pr-action-btn, .ptal-dismiss-btn')) return
                 openGitHubItemOnModifierClick(event, item.repo, item.type, item.number)
               }}
             >
@@ -253,14 +259,17 @@ function PTALRepoGroup({ repo, items, repoIssues, repoPRs, isUnread, clearing, o
               className={`ptal-row-container fade-in ${isClearing ? 'ptal-clearing' : ''}`}
               style={{ animationDelay: `${idx * 40}ms` }}
               onClickCapture={(event) => {
-                if ((event.target as HTMLElement).closest('button.ptal-dismiss-btn')) return
+                if ((event.target as HTMLElement).closest('.pr-action-btn, .ptal-dismiss-btn')) return
                 openGitHubItemOnModifierClick(event, item.repo, item.type, item.number)
               }}
             >
               <IssueItemRow
                 issue={issue}
                 unread={isUnread(repo, issue.number, issue.updatedAt)}
+                repo={repo}
+                writeMode={writeMode}
                 onSelect={(event) => onItemClick(event, item)}
+                onIssueClosed={onIssueClosed}
               />
               {dismissButton}
             </div>
@@ -275,7 +284,7 @@ function PTALRepoGroup({ repo, items, repoIssues, repoPRs, isUnread, clearing, o
             className={`ptal-row-container fade-in ${isClearing ? 'ptal-clearing' : ''}`}
             style={{ animationDelay: `${idx * 40}ms` }}
             onClickCapture={(event) => {
-              if ((event.target as HTMLElement).closest('button.ptal-dismiss-btn')) return
+              if ((event.target as HTMLElement).closest('.pr-action-btn, .ptal-dismiss-btn')) return
               openGitHubItemOnModifierClick(event, item.repo, item.type, item.number)
             }}
           >

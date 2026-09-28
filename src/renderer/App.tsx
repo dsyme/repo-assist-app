@@ -284,6 +284,21 @@ export default function App() {
     ))
   }, [])
 
+  const handleIssueClosed = useCallback((repo: string, issueNumber: number) => {
+    removePTALForPR(repo, issueNumber)
+    setRepoData(prev => {
+      const data = prev[repo]
+      if (!data) return prev
+      return {
+        ...prev,
+        [repo]: {
+          ...data,
+          issues: data.issues.filter(issue => issue.number !== issueNumber),
+        },
+      }
+    })
+  }, [removePTALForPR])
+
   /** Explicitly re-fetch issues & PRs for a repo (user-triggered refresh) */
   const handleRefreshRepo = useCallback(async (repo: string) => {
     setRepoData(prev => ({ ...prev, [repo]: { ...prev[repo], loading: true } }))
@@ -446,6 +461,7 @@ export default function App() {
               loading={ptalLoading}
               initialized={ptalInitialized}
               repoData={repoData}
+              writeMode={writeMode}
               isUnread={isUnread}
               onMarkRead={handleMarkRead}
               onClear={handleClearPTAL}
@@ -454,6 +470,7 @@ export default function App() {
                 returnNavRef.current = { ...nav }
                 setNav(target)
               }}
+              onIssueClosed={handleIssueClosed}
               onPRUpdate={handlePRUpdate}
               onWorkflowRunsApproved={handleWorkflowRunsApproved}
             />
@@ -465,9 +482,11 @@ export default function App() {
             <IssueList
               repo={nav.repo}
               issues={repoData[nav.repo].issues}
+              writeMode={writeMode}
               isUnread={isUnread}
               onMarkRead={handleMarkRead}
               onSelectItem={(num: number) => setNav(prev => ({ ...prev, selectedItem: num }))}
+              onIssueClosed={(issueNumber) => handleIssueClosed(nav.repo!, issueNumber)}
               onRefresh={() => handleRefreshRepo(nav.repo!)}
             />
           )}
@@ -497,6 +516,7 @@ export default function App() {
               initialized={ptalInitialized}
               filterRepo={nav.repo}
               repoData={repoData}
+              writeMode={writeMode}
               isUnread={isUnread}
               onMarkRead={handleMarkRead}
               onClear={handleClearPTAL}
@@ -505,6 +525,7 @@ export default function App() {
                 returnNavRef.current = { ...nav }
                 setNav(target)
               }}
+              onIssueClosed={handleIssueClosed}
               onPRUpdate={handlePRUpdate}
               onWorkflowRunsApproved={handleWorkflowRunsApproved}
             />
@@ -528,13 +549,7 @@ export default function App() {
                 onIssueClosed={() => {
                   const closedRepo = nav.repo!
                   const closedNumber = nav.selectedItem!
-                  removePTALForPR(closedRepo, closedNumber)
-                  // Remove from the open issues list
-                  setRepoData(prev => {
-                    const data = prev[closedRepo]
-                    if (!data) return prev
-                    return { ...prev, [closedRepo]: { ...data, issues: data.issues.filter(i => i.number !== closedNumber) } }
-                  })
+                  handleIssueClosed(closedRepo, closedNumber)
                 }}
                 onMerged={() => {
                   const mergedRepo = nav.repo!

@@ -14,11 +14,19 @@ describe('GitHub navigation', () => {
     expect(isExternalNavigationModifier({ ctrlKey: false, metaKey: false, shiftKey: false })).toBe(false)
   })
 
-  it('recognizes interactive descendants that should not select a row', () => {
-    const buttonTarget = { closest: (selector: string) => selector.includes('button') ? {} as Element : null }
-    const textTarget = { closest: () => null }
+  it('recognizes interactive descendants without treating the row itself as nested', () => {
+    const row = {} as Element
+    const nestedButton = {} as Element
+    const nestedButtonTarget = { closest: (selector: string) => selector.includes('button') ? nestedButton : null }
+    const rowTextTarget = { closest: (selector: string) => selector.includes('button') ? row : null }
 
-    expect(isInteractiveNavigationTarget({ target: buttonTarget as unknown as EventTarget })).toBe(true)
-    expect(isInteractiveNavigationTarget({ target: textTarget as unknown as EventTarget })).toBe(false)
+    expect(isInteractiveNavigationTarget({
+      target: nestedButtonTarget as unknown as EventTarget,
+      currentTarget: row as unknown as EventTarget & HTMLElement,
+    })).toBe(true)
+    expect(isInteractiveNavigationTarget({
+      target: rowTextTarget as unknown as EventTarget,
+      currentTarget: row as unknown as EventTarget & HTMLElement,
+    })).toBe(false)
   })
 })

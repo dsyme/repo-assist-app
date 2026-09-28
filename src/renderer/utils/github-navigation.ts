@@ -8,9 +8,10 @@ export function isExternalNavigationModifier(event: Pick<NavigationEvent, 'ctrlK
   return event.ctrlKey || event.metaKey || event.shiftKey
 }
 
-export function isInteractiveNavigationTarget(event: Pick<NavigationEvent, 'target'>): boolean {
+export function isInteractiveNavigationTarget(event: Pick<NavigationEvent, 'target' | 'currentTarget'>): boolean {
   const target = event.target as { closest?: (selector: string) => Element | null } | null
-  return Boolean(target?.closest?.('button, a, input, select, textarea'))
+  const interactiveTarget = target?.closest?.('button, a, input, select, textarea')
+  return Boolean(interactiveTarget && interactiveTarget !== event.currentTarget)
 }
 
 export function githubItemUrl(repo: string, type: 'issue' | 'pr', number: number): string {
