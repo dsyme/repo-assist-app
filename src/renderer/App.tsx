@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Flash, ToggleSwitch, Text, Button } from '@primer/react'
-import { ZapIcon } from '@primer/octicons-react'
+import { SyncIcon, ZapIcon } from '@primer/octicons-react'
 import { NavState, RepoIssue, RepoPR, PTALItem, RepoStorageStatus } from '@shared/types'
 import { Sidebar } from './components/Sidebar'
 import { RecapPanel } from './components/RecapPanel'
@@ -18,7 +18,14 @@ interface RepoData {
   issues: RepoIssue[]
   prs: RepoPR[]
   loading: boolean
+  refreshProgress?: {
+    completed: number
+    total: number
+    label: string
+  }
 }
+
+const AUTO_REFRESH_INTERVAL_MS = 30 * 60 * 1000
 
 export default function App() {
   const [nav, setNav] = useState<NavState>({ section: 'recap', repo: null, repoSection: null, selectedItem: null })
@@ -37,6 +44,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [storagePrompt, setStoragePrompt] = useState(false)
   const [storageLoading, setStorageLoading] = useState(false)
+  const [nextAutoRefreshAt, setNextAutoRefreshAt] = useState<Date | null>(null)
+  const [refreshingAll, setRefreshingAll] = useState(false)
+  const activeRepoRefreshesRef = useRef<Map<string, Promise<void>>>(new Map())
   // Track the nav state to return to when closing a detail view
   const returnNavRef = useRef<NavState | null>(null)
 
@@ -299,27 +309,106 @@ export default function App() {
     })
   }, [removePTALForPR])
 
-  /** Explicitly re-fetch issues & PRs for a repo (user-triggered refresh) */
-  const handleRefreshRepo = useCallback(async (repo: string) => {
-    setRepoData(prev => ({ ...prev, [repo]: { ...prev[repo], loading: true } }))
-    try {
-      const [issues, prs] = await Promise.all([
-        window.repoAssist.getIssues(repo),
-        window.repoAssist.getPRs(repo),
-      ])
-      const reconciledPRs = prs.map(pr => {
-        const key = `${repo}#${pr.number}`
-        if (!readyPRKeysRef.current.has(key)) return pr
-        if (!pr.isDraft) readyPRKeysRef.current.delete(key)
-        return { ...pr, isDraft: false }
+  const refreshRepoData = useCallback((repo: string): Promise<void> => {
+    const activeRefresh = activeRepoRefreshesRef.current.get(repo)
+    if (activeRefresh) return activeRefresh
+
+    setRepoData(prev => ({
+      ...prev,
+      [repo]: {
+        issues: prev[repo]?.issues ?? [],
+        prs: prev[repo]?.prs ?? [],
+        loading: true,
+        refreshProgress: { completed: 0, total: 2, label: 'Queued' },
+      },
+    }))
+
+    const completeStep = (
+      label: string,
+      update: (data: RepoData) => RepoData,
+    ) => {
+      setRepoData(prev => {
+        const data = prev[repo]
+        if (!data) return prev
+        const completed = Math.min((data.refreshProgress?.completed ?? 0) + 1, 2)
+        return {
+          ...prev,
+          [repo]: {
+            ...update(data),
+            loading: completed < 2,
+            refreshProgress: {
+              completed,
+              total: 2,
+              label: completed === 2 ? 'Refresh complete' : label,
+            },
+          },
+        }
       })
-      setRepoData(prev => ({ ...prev, [repo]: { issues, prs: reconciledPRs, loading: false } }))
-    } catch {
-      setRepoData(prev => ({ ...prev, [repo]: { ...prev[repo], loading: false } }))
     }
-    // Also refresh PTAL in background
-    refreshPTAL()
-  }, [refreshPTAL])
+
+    const operation = async () => {
+      await Promise.all([
+        window.repoAssist.getIssues(repo).then(
+          issues => completeStep('Issues refreshed', data => ({ ...data, issues })),
+          () => completeStep('Issues refresh failed', data => data),
+        ),
+        window.repoAssist.getPRs(repo).then(
+          prs => {
+            const reconciledPRs = prs.map(pr => {
+              const key = `${repo}#${pr.number}`
+              if (!readyPRKeysRef.current.has(key)) return pr
+              if (!pr.isDraft) readyPRKeysRef.current.delete(key)
+              return { ...pr, isDraft: false }
+            })
+            completeStep('Pull requests refreshed', data => ({ ...data, prs: reconciledPRs }))
+          },
+          () => completeStep('Pull request refresh failed', data => data),
+        ),
+      ])
+    }
+
+    let trackedOperation: Promise<void>
+    trackedOperation = operation().finally(() => {
+      if (activeRepoRefreshesRef.current.get(repo) === trackedOperation) {
+        activeRepoRefreshesRef.current.delete(repo)
+      }
+    })
+    activeRepoRefreshesRef.current.set(repo, trackedOperation)
+    return trackedOperation
+  }, [])
+
+  /** Explicitly re-fetch issues, PRs, and PTAL data for a repo. */
+  const handleRefreshRepo = useCallback(async (repo: string) => {
+    await refreshRepoData(repo)
+    await refreshPTAL()
+  }, [refreshPTAL, refreshRepoData])
+
+  const refreshAllRepos = useCallback(async () => {
+    setRefreshingAll(true)
+    try {
+      await Promise.all(repos.map(refreshRepoData))
+      await refreshPTAL(repos)
+    } finally {
+      setRefreshingAll(false)
+    }
+  }, [refreshPTAL, refreshRepoData, repos])
+
+  useEffect(() => {
+    if (loading || storagePrompt || repos.length === 0) {
+      setNextAutoRefreshAt(null)
+      return
+    }
+
+    const scheduleNextRefresh = () => {
+      setNextAutoRefreshAt(new Date(Date.now() + AUTO_REFRESH_INTERVAL_MS))
+    }
+    scheduleNextRefresh()
+    const timer = window.setInterval(() => {
+      scheduleNextRefresh()
+      void refreshAllRepos()
+    }, AUTO_REFRESH_INTERVAL_MS)
+    return () => window.clearInterval(timer)
+  }, [loading, refreshAllRepos, repos.length, storagePrompt])
 
   // Global click handler: intercept GitHub issue/PR links
   // Normal click = navigate internally, modified click = open in browser
@@ -412,8 +501,21 @@ export default function App() {
             🌈 Repo Assist
           </span>
           <span className="toolbar-meta">{repos.length} repositories</span>
+          {nextAutoRefreshAt && (
+            <span className="auto-refresh-label" title={`Next refresh: ${nextAutoRefreshAt.toLocaleString()}`}>
+              Auto refresh · 30m
+            </span>
+          )}
         </div>
         <div className="toolbar-right">
+          <Button
+            size="small"
+            leadingVisual={SyncIcon}
+            disabled={refreshingAll || repos.length === 0}
+            onClick={() => void refreshAllRepos()}
+          >
+            {refreshingAll ? 'Refreshing…' : 'Refresh all'}
+          </Button>
           <span id="write-mode-label" className={`write-mode-indicator ${writeMode ? 'active' : 'inactive'}`}>
             {writeMode ? '● Write' : '○ Read-only'}
           </span>

@@ -20,6 +20,11 @@ interface RepoData {
   issues: RepoIssue[]
   prs: RepoPR[]
   loading: boolean
+  refreshProgress?: {
+    completed: number
+    total: number
+    label: string
+  }
 }
 
 interface SidebarProps {
@@ -179,6 +184,10 @@ export function Sidebar({ repos, repoData, nav, onNavigate, ptalItems, onAddRepo
           const prCount = data?.prs?.length ?? 0
           const repoPtalCount = ptalCountsByRepo.get(repo) ?? 0
           const isExpanded = expandedRepos.has(repo)
+          const refreshProgress = data?.refreshProgress
+          const refreshPercent = refreshProgress
+            ? Math.round((refreshProgress.completed / refreshProgress.total) * 100)
+            : 0
 
           return (
             <TreeView.Item
@@ -204,11 +213,23 @@ export function Sidebar({ repos, repoData, nav, onNavigate, ptalItems, onAddRepo
                 </span>
                 {onRefreshRepo && (
                   <span
-                    className="sidebar-refresh-btn"
-                    title="Refresh repo data"
-                    onClick={(e) => { e.stopPropagation(); onRefreshRepo(repo) }}
+                    className={`sidebar-refresh-btn${data?.loading ? ' is-loading' : ''}`}
+                    title={data?.loading ? refreshProgress?.label : 'Refresh repo data'}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (!data?.loading) onRefreshRepo(repo)
+                    }}
                   >
-                    {data?.loading ? <Spinner size="small" /> : <SyncIcon size={14} />}
+                    {data?.loading && refreshProgress ? (
+                      <span
+                        className="repo-inline-progress"
+                        role="status"
+                        aria-label={`${repoShortName(repo)}: ${refreshProgress.label}, ${refreshPercent}%`}
+                      >
+                        <progress max="100" value={refreshPercent} />
+                        <em>{refreshPercent}%</em>
+                      </span>
+                    ) : data?.loading ? <Spinner size="small" /> : <SyncIcon size={14} />}
                   </span>
                 )}
                 {onRemoveRepo && (

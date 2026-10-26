@@ -142,6 +142,12 @@ button[aria-disabled="true"] {
   color: var(--fgColor-muted, #8b949e);
 }
 
+.auto-refresh-label {
+  font-size: 11px;
+  color: var(--fgColor-muted, #8b949e);
+  white-space: nowrap;
+}
+
 .toolbar-right {
   display: flex;
   align-items: center;
@@ -234,6 +240,49 @@ li:hover .sidebar-item-row .sidebar-refresh-btn {
 .sidebar-refresh-btn:hover {
   opacity: 1 !important;
   color: var(--fgColor-accent, #58a6ff);
+}
+
+.sidebar-refresh-btn.is-loading {
+  opacity: 1;
+  cursor: default;
+}
+
+.repo-inline-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.repo-inline-progress progress {
+  width: 38px;
+  height: 5px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 5px;
+  background: var(--bgColor-neutral-muted, #30363d);
+}
+
+.repo-inline-progress progress::-webkit-progress-bar {
+  border-radius: 5px;
+  background: var(--bgColor-neutral-muted, #30363d);
+}
+
+.repo-inline-progress progress::-webkit-progress-value {
+  border-radius: 5px;
+  background: var(--fgColor-accent, #58a6ff);
+}
+
+.repo-inline-progress progress::-moz-progress-bar {
+  border-radius: 5px;
+  background: var(--fgColor-accent, #58a6ff);
+}
+
+.repo-inline-progress em {
+  min-width: 26px;
+  color: var(--fgColor-muted, #8b949e);
+  font-size: 9px;
+  font-style: normal;
+  text-align: right;
 }
 
 /* Remove repo button — visible on hover, after refresh */
