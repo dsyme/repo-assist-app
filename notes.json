@@ -6,7 +6,14 @@
   },
   "issues": [],
   "fixes": [],
-  "checks": [],
+  "checks": [
+    {
+      "area": "docs",
+      "checked_at": "2026-11-26",
+      "result": "README missing npm test; PR opened (basics-readme-test-script)",
+      "follow_up": null
+    }
+  ],
   "completed_actions": [],
   "priorities": []
 }
