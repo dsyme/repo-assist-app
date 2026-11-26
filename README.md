@@ -112,6 +112,7 @@ All GitHub data flows through the `gh` CLI — no tokens or OAuth needed beyond 
 | `npm run dev` | Start in development mode with hot reload |
 | `npm run build` | Production build to `dist/` |
 | `npm run typecheck` | TypeScript strict checking (`noUnusedLocals`, `noUnusedParameters`) |
+| `npm test` | Run the Vitest unit tests |
 
 ## License
 
